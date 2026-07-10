@@ -1,0 +1,238 @@
+{
+	"info": {
+		"_postman_id": "598a4cc9-81d3-4075-98ec-cfbca852e20f",
+		"name": "TELU BAOBAB API",
+		"description": "API Laravel de TELU BAOBAB, super-app multi-services pour le Togo (commerce & livraison, immobilier, emploi).\n\nUne seule table `users` alimente trois marketplaces distincts, via `user_type` : `client`, `vendor`, `driver`, `property_owner`, `recruiter`, `job_seeker`.\n\nÉtat d'implémentation : seuls les endpoints d'authentification (`/api/auth/*`) existent aujourd'hui. Les autres dossiers de cette collection sont des emplacements réservés, à compléter au fur et à mesure que les contrôleurs des autres domaines seront développés.\n\nVariables de collection :\n- `base_url` : URL racine de l'API (ex. http://localhost:8000/api)\n- `token` : jeton Sanctum, rempli automatiquement par les scripts de test de Register/Login et vidé par Logout",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{token}}",
+				"type": "string"
+			}
+		]
+	},
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000/api",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "Auth",
+			"description": "Inscription, connexion et gestion de session via Laravel Sanctum (jetons). Voir App\\Http\\Controllers\\Api\\AuthController.",
+			"item": [
+				{
+					"name": "Register",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"full_name\": \"Ama Kokou\",\n    \"phone\": \"+22890123456\",\n    \"email\": \"ama.kokou@example.com\",\n    \"password\": \"password\",\n    \"password_confirmation\": \"password\",\n    \"user_type\": \"client\",\n    \"profile_photo\": null,\n    \"current_latitude\": 6.1319,\n    \"current_longitude\": 1.2228\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"register"
+							]
+						},
+						"description": "Crée un utilisateur et retourne un jeton d'accès. `user_type` doit être l'une des valeurs : client, vendor, driver, property_owner, recruiter, job_seeker. `email` est optionnel, `phone` doit être unique."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status is 201', function () {",
+									"    pm.response.to.have.status(201);",
+									"});",
+									"",
+									"if (pm.response.code === 201) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('token', body.token);",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Login",
+					"request": {
+						"auth": {
+							"type": "noauth"
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"login\": \"client@telu.tg\",\n    \"password\": \"password\",\n    \"device_name\": \"postman\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"login"
+							]
+						},
+						"description": "Authentifie un utilisateur par email ou téléphone (`login` est auto-détecté) et retourne un jeton d'accès. Comptes de test seedés (mot de passe `password`) : admin@telu.tg, client@telu.tg."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    const body = pm.response.json();",
+									"    pm.collectionVariables.set('token', body.token);",
+									"}"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Me",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/auth/me",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"me"
+							]
+						},
+						"description": "Retourne l'utilisateur actuellement authentifié (requiert `Authorization: Bearer {{token}}`)."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});"
+								]
+							}
+						}
+					]
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/auth/logout",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"auth",
+								"logout"
+							]
+						},
+						"description": "Révoque le jeton utilisé pour authentifier la requête courante."
+					},
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"type": "text/javascript",
+								"exec": [
+									"pm.test('Status is 200', function () {",
+									"    pm.response.to.have.status(200);",
+									"});",
+									"",
+									"if (pm.response.code === 200) {",
+									"    pm.collectionVariables.set('token', '');",
+									"}"
+								]
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"name": "Commerce & Livraison (à venir)",
+			"description": "Emplacement réservé pour vendors → products → orders → order_items → deliveries, ainsi que drivers. Aucun contrôleur n'est encore implémenté côté API (voir routes/api.php) ; à compléter au fur et à mesure.",
+			"item": []
+		},
+		{
+			"name": "Immobilier (à venir)",
+			"description": "Emplacement réservé pour property_owners → properties → reservations. Aucun contrôleur n'est encore implémenté côté API.",
+			"item": []
+		},
+		{
+			"name": "Emploi (à venir)",
+			"description": "Emplacement réservé pour recruiters → job_offers et job_seekers → job_applications. Aucun contrôleur n'est encore implémenté côté API.",
+			"item": []
+		},
+		{
+			"name": "Transverse (à venir)",
+			"description": "Emplacement réservé pour subscriptions, payments, messages, ratings, notifications. Aucun contrôleur n'est encore implémenté côté API.",
+			"item": []
+		}
+	]
+}
