@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\DriverDeliveryController;
 use App\Http\Controllers\Api\JobApplicationController;
 use App\Http\Controllers\Api\JobOfferController;
 use App\Http\Controllers\Api\JobSeekerController;
+use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OwnerPropertyController;
@@ -138,4 +139,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
     Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
     Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
+
+    // Direct messaging between users.
+    Route::get('/conversations', [MessageController::class, 'conversations']);
+    Route::post('/messages', [MessageController::class, 'store']);
+    Route::get('/messages/unread-count', [MessageController::class, 'unreadCount']);
+    Route::get('/messages/{user}', [MessageController::class, 'thread']);
 });
