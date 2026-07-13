@@ -1,0 +1,270 @@
+{
+  "info": {
+    "name": "TELU-API",
+    "description": "Collection de test de l'API TELU BAOBAB (Laravel + Sanctum).\n\nDémarrer l'API : `php artisan serve`.\nLe token est capturé automatiquement lors de Register/Login et réutilisé par les requêtes protégées.\n\nOrganisation : les dossiers sont numérotés dans l'ordre de construction du planning (01 - Auth en premier, etc).\n\nVariables : base_url, token, vendor_token, client_token, user_id.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "vendor_token", "value": "", "type": "string" },
+    { "key": "client_token", "value": "", "type": "string" },
+    { "key": "user_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "01 - Auth",
+      "item": [
+        {
+          "name": "Register (vendeur)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json.token) {",
+                  "  pm.collectionVariables.set('token', json.token);",
+                  "  pm.collectionVariables.set('vendor_token', json.token);",
+                  "  console.log('token vendeur enregistré');",
+                  "}",
+                  "if (json.user && json.user.id) {",
+                  "  pm.collectionVariables.set('user_id', json.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Ama Vendeur\",\n  \"phone\": \"+228 90 {{$randomInt}}\",\n  \"email\": \"vendeur_{{$timestamp}}@telu.tg\",\n  \"password\": \"secret123\",\n  \"password_confirmation\": \"secret123\",\n  \"user_type\": \"vendor\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Cree un compte. user_type in client|vendor|driver|property_owner|recruiter|job_seeker. Renvoie user + token (stocke automatiquement dans token ET vendor_token)."
+          }
+        },
+        {
+          "name": "Register (client)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 201', () => pm.response.to.have.status(201));",
+                  "const json = pm.response.json();",
+                  "if (json.token) {",
+                  "  pm.collectionVariables.set('token', json.token);",
+                  "  pm.collectionVariables.set('client_token', json.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Kofi Client\",\n  \"phone\": \"+228 91 {{$randomInt}}\",\n  \"email\": \"client_{{$timestamp}}@telu.tg\",\n  \"password\": \"secret123\",\n  \"password_confirmation\": \"secret123\",\n  \"user_type\": \"client\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Compte client - sert a tester le 403 sur la creation d'un profil vendeur (dossier 03)."
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status 200', () => pm.response.to.have.status(200));",
+                  "const json = pm.response.json();",
+                  "if (json.token) {",
+                  "  pm.collectionVariables.set('token', json.token);",
+                  "  console.log('token mis a jour');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login\": \"admin@telu.tg\",\n  \"password\": \"password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "login = email OU telephone (auto-detecte). Comptes seedes : admin@telu.tg / client@telu.tg (mot de passe: password)."
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Retourne l'utilisateur authentifie (token herite de la collection)."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "logout"]
+            },
+            "description": "Revoque le token courant."
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Socle commun",
+      "item": [],
+      "description": "A venir : messagerie, notifications, evaluations, upload de fichiers."
+    },
+    {
+      "name": "03 - Commerce & Livraison",
+      "item": [
+        {
+          "name": "Vendor profile",
+          "item": [
+            {
+              "name": "Create vendor profile",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('status 201', () => pm.response.to.have.status(201));"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Accept", "value": "application/json" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"shop_name\": \"Chez Ama\",\n  \"description\": \"Produits locaux\",\n  \"address\": \"Lome, Togo\",\n  \"latitude\": 6.13,\n  \"longitude\": 1.22\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/vendor",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendor"]
+                },
+                "description": "Cree le profil vendeur du compte connecte. Requiert un token d'un compte user_type=vendor (utilisez {{vendor_token}} si vous testez avec un autre role connecte).\n- 403 si le compte n'est pas vendeur\n- 409 si un profil existe deja\n- 422 si shop_name manquant"
+              }
+            },
+            {
+              "name": "Get my vendor profile",
+              "request": {
+                "method": "GET",
+                "header": [{ "key": "Accept", "value": "application/json" }],
+                "url": {
+                  "raw": "{{base_url}}/api/vendor",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendor"]
+                },
+                "description": "404 si aucun profil vendeur."
+              }
+            },
+            {
+              "name": "Update my vendor profile",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  { "key": "Accept", "value": "application/json" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"description\": \"Description mise a jour\",\n  \"address\": \"Nouveau quartier, Lome\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/vendor",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "vendor"]
+                },
+                "description": "MAJ partielle (shop_name devient optionnel en PUT). is_active/subscription_id non modifiables ici (reserves au module abonnement)."
+              }
+            }
+          ]
+        },
+        {
+          "name": "Products",
+          "item": [],
+          "description": "A venir : CRUD produits (Ordre 58 du planning)."
+        },
+        {
+          "name": "Orders & Delivery",
+          "item": [],
+          "description": "A venir : panier, commande, matching livreur, suivi (Ordre 61-70)."
+        }
+      ]
+    },
+    {
+      "name": "04 - Immobilier",
+      "item": [],
+      "description": "A venir : annonces, reservations, paiement (Ordre 71-80)."
+    },
+    {
+      "name": "05 - Emploi Journalier",
+      "item": [],
+      "description": "A venir : offres, candidatures (Ordre 81-90)."
+    },
+    {
+      "name": "06 - Administration",
+      "item": [],
+      "description": "A venir : dashboard admin, moderation, statistiques (Ordre 91-102)."
+    }
+  ]
+}

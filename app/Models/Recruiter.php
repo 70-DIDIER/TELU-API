@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 #[Fillable([
     'user_id',
@@ -26,5 +27,20 @@ class Recruiter extends Model
     public function jobOffers(): HasMany
     {
         return $this->hasMany(JobOffer::class);
+    }
+
+    /**
+     * Applications across all of this recruiter's job offers.
+     */
+    public function applications(): HasManyThrough
+    {
+        return $this->hasManyThrough(
+            JobApplication::class,
+            JobOffer::class,
+            'recruiter_id', // FK on job_offers -> recruiters
+            'job_offer_id', // FK on job_applications -> job_offers
+            'id',           // local key on recruiters
+            'id'            // local key on job_offers
+        );
     }
 }
