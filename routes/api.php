@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OwnerPropertyController;
 use App\Http\Controllers\Api\OwnerReservationController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PropertyOwnerController;
@@ -151,4 +152,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/ratings', [RatingController::class, 'store']);
     Route::get('/my-ratings', [RatingController::class, 'mine']);
     Route::get('/ratings/{targetType}/{targetId}', [RatingController::class, 'forTarget']);
+
+    // Payments (simulated) for orders, reservations and subscriptions.
+    Route::get('/payments', [PaymentController::class, 'index']);
+    Route::post('/payments', [PaymentController::class, 'store']);
+    Route::get('/payments/{payment}', [PaymentController::class, 'show']);
+    Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm']);
 });
