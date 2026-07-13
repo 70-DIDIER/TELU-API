@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\OwnerReservationController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PropertyController;
 use App\Http\Controllers\Api\PropertyOwnerController;
+use App\Http\Controllers\Api\RatingController;
 use App\Http\Controllers\Api\RecruiterApplicationController;
 use App\Http\Controllers\Api\RecruiterController;
 use App\Http\Controllers\Api\RecruiterJobOfferController;
@@ -145,4 +146,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/messages', [MessageController::class, 'store']);
     Route::get('/messages/unread-count', [MessageController::class, 'unreadCount']);
     Route::get('/messages/{user}', [MessageController::class, 'thread']);
+
+    // Ratings of business profiles.
+    Route::post('/ratings', [RatingController::class, 'store']);
+    Route::get('/my-ratings', [RatingController::class, 'mine']);
+    Route::get('/ratings/{targetType}/{targetId}', [RatingController::class, 'forTarget']);
 });
