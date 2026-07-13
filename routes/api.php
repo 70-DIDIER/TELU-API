@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\DriverDeliveryController;
 use App\Http\Controllers\Api\JobApplicationController;
 use App\Http\Controllers\Api\JobOfferController;
 use App\Http\Controllers\Api\JobSeekerController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OwnerPropertyController;
 use App\Http\Controllers\Api\OwnerReservationController;
@@ -131,4 +132,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Applications received by the authenticated recruiter.
     Route::get('/recruiter/job-offers/{jobOffer}/applications', [RecruiterApplicationController::class, 'index']);
     Route::patch('/recruiter/applications/{application}/status', [RecruiterApplicationController::class, 'updateStatus']);
+
+    // Notifications of the authenticated user (fed by every module).
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::get('/notifications/unread-count', [NotificationController::class, 'unreadCount']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::patch('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
 });
