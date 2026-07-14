@@ -20,6 +20,7 @@ use Laravel\Sanctum\HasApiTokens;
     'full_name',
     'profile_photo',
     'user_type',
+    'status',
     'current_latitude',
     'current_longitude',
     'is_verified',
