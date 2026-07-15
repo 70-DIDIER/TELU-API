@@ -37,10 +37,16 @@ class AuthController extends Controller
     {
         $login = $request->input('login');
         $field = filter_var($login, FILTER_VALIDATE_EMAIL) ? 'email' : 'phone';
-
         $user = User::where($field, $login)->first();
 
-        if (! $user || ! Hash::check($request->input('password'), $user->password)) {
+    // ?-> évite un crash si $user est null. Si null, on utilise un hash bidon
+    // pour forcer Hash::check() à s'exécuter quand même (même temps de calcul).
+
+        $hashToCheck = $user?->password ?? '$2y$12$eImiTXuWVxfM37uY4JANjQeQeInvalidHashXyz123456';
+
+        $passwordValid = Hash::check($request->input('password'), $hashToCheck);
+
+        if (! $user || ! $passwordValid) {
             throw ValidationException::withMessages([
                 'login' => [__('auth.failed')],
             ]);
