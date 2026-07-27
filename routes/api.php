@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\JobSeekerController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\OrderController;
+use App\Http\Controllers\Api\OtpController;
 use App\Http\Controllers\Api\OwnerPropertyController;
 use App\Http\Controllers\Api\OwnerReservationController;
 use App\Http\Controllers\Api\PaymentController;
@@ -49,6 +50,16 @@ use Illuminate\Support\Facades\Route;
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
 
+// Vérification du numéro par OTP SMS (AfrikSMS), avant inscription.
+// Le throttle par IP double la limitation par numéro appliquée dans OtpService.
+Route::middleware('throttle:10,1')->group(function () {
+    Route::post('/auth/otp/send', [OtpController::class, 'send']);
+    Route::post('/auth/otp/verify', [OtpController::class, 'verify']);
+});
+
+// Webhook de confirmation PayGate Global (non authentifié, re-vérifié côté serveur).
+Route::post('/payments/callback', [PaymentController::class, 'callback']);
+
 /*
 |--------------------------------------------------------------------------
 | Authenticated routes (Sanctum token)
@@ -57,6 +68,10 @@ Route::post('/auth/login', [AuthController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    // Vérification par OTP SMS du numéro déjà enregistré sur le compte.
+    Route::post('/otp/send', [OtpController::class, 'sendForMe'])->middleware('throttle:10,1');
+    Route::post('/otp/verify', [OtpController::class, 'verifyForMe'])->middleware('throttle:10,1');
 
     // Vendor profile of the authenticated user.
     Route::get('/vendor', [VendorController::class, 'show']);
@@ -169,11 +184,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my-ratings', [RatingController::class, 'mine']);
     Route::get('/ratings/{targetType}/{targetId}', [RatingController::class, 'forTarget']);
 
-    // Payments (simulated) for orders, reservations and subscriptions.
+    // Payments (PayGate Global — Flooz / TMoney) for orders, reservations and subscriptions.
     Route::get('/payments', [PaymentController::class, 'index']);
     Route::post('/payments', [PaymentController::class, 'store']);
     Route::get('/payments/{payment}', [PaymentController::class, 'show']);
-    Route::post('/payments/{payment}/confirm', [PaymentController::class, 'confirm']);
+    Route::post('/payments/{payment}/check', [PaymentController::class, 'check']);
 
     /*
     |--------------------------------------------------------------------------

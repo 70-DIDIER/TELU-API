@@ -1,7 +1,7 @@
 {
     "info": {
         "name": "TELU BAOBAB API",
-        "description": "Collection generee par postman/build_collection.php — ne pas editer a la main. Couvre auth, les 5 profils metier, Commerce/Livraison, Immobilier, Emploi, Notifications, Messagerie, Evaluations et Paiements.",
+        "description": "Collection generee par postman/build_collection.php — ne pas editer a la main. Couvre auth, les 5 profils metier, Commerce/Livraison, Immobilier, Emploi, Notifications, Messagerie, Evaluations et Paiements (PayGate Global — Flooz / TMoney).",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
     "auth": {
@@ -85,6 +85,26 @@
         },
         {
             "key": "payment_id",
+            "value": ""
+        },
+        {
+            "key": "paygate_test_phone",
+            "value": "90000000"
+        },
+        {
+            "key": "otp_phone",
+            "value": "90000000"
+        },
+        {
+            "key": "otp_code",
+            "value": ""
+        },
+        {
+            "key": "otp_token",
+            "value": ""
+        },
+        {
+            "key": "otp_user_token",
             "value": ""
         },
         {
@@ -358,6 +378,250 @@
                                 "type": "text/javascript",
                                 "exec": [
                                     "pm.test('status 200', () => pm.response.to.have.status(200));"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "OTP - Verification SMS",
+            "item": [
+                {
+                    "name": "01. Envoyer un code (200)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"phone\": \"{{otp_phone}}\"\n}"
+                        },
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/auth/otp/send",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "otp",
+                                "send"
+                            ]
+                        },
+                        "description": "Renseignez {{otp_phone}} avec un vrai numero togolais. Renvoi limite a 1 code / 60 s et 5 codes / heure par numero."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 (SMS parti), 409 (deja inscrit) ou 502 (passerelle KO)', function () { pm.expect([200, 409, 502]).to.include(pm.response.code); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "02. Verifier le code (200)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"phone\": \"{{otp_phone}}\",\n    \"code\": \"{{otp_code}}\"\n}"
+                        },
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/auth/otp/verify",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "otp",
+                                "verify"
+                            ]
+                        },
+                        "description": "Collez dans {{otp_code}} le code recu par SMS. En cas de succes le jeton est capture dans {{otp_token}} (valable 30 min)."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200 (verifie) ou 422 (code faux/expire)', function () { pm.expect([200, 422]).to.include(pm.response.code); });",
+                                    "{ const j = pm.response.json(); if (j.verification_token) pm.collectionVariables.set('otp_token', j.verification_token); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "03. Inscription avec le numero verifie (201)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"full_name\": \"Client verifie\",\n    \"phone\": \"{{otp_phone}}\",\n    \"email\": \"otp-{{$guid}}@telu.tg\",\n    \"password\": \"secret123\",\n    \"password_confirmation\": \"secret123\",\n    \"user_type\": \"client\",\n    \"otp_token\": \"{{otp_token}}\"\n}"
+                        },
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/auth/register",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "auth",
+                                "register"
+                            ]
+                        },
+                        "description": "Avec un otp_token valide le compte est cree avec is_verified=true et phone_verified_at renseigne."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('status 201', () => pm.response.to.have.status(201));",
+                                    "{ const j = pm.response.json(); if (j.token) pm.collectionVariables.set('otp_user_token', j.token); }"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "04. Envoyer un code sur mon propre numero (200)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            }
+                        ],
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{otp_user_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/otp/send",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "otp",
+                                "send"
+                            ]
+                        },
+                        "description": "Flux connecte : le code part vers le numero du compte, sans le passer dans le body."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200, 409 (deja verifie) ou 502', function () { pm.expect([200, 409, 502]).to.include(pm.response.code); });"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "05. Verifier mon numero (200)",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"code\": \"{{otp_code}}\"\n}"
+                        },
+                        "auth": {
+                            "type": "bearer",
+                            "bearer": [
+                                {
+                                    "key": "token",
+                                    "value": "{{otp_user_token}}",
+                                    "type": "string"
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/otp/verify",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "otp",
+                                "verify"
+                            ]
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('200, 409 (deja verifie) ou 422', function () { pm.expect([200, 409, 422]).to.include(pm.response.code); });"
                                 ]
                             }
                         }
@@ -5186,7 +5450,7 @@
                     ]
                 },
                 {
-                    "name": "04. Payer la commande - mobile_money (201)",
+                    "name": "04. Payer la commande - flooz (201)",
                     "request": {
                         "method": "POST",
                         "header": [
@@ -5201,7 +5465,7 @@
                         ],
                         "body": {
                             "mode": "raw",
-                            "raw": "{\n    \"reference_type\": \"order\",\n    \"reference_id\": \"{{pay_order_id}}\",\n    \"payment_method\": \"mobile_money\"\n}"
+                            "raw": "{\n    \"reference_type\": \"order\",\n    \"reference_id\": \"{{pay_order_id}}\",\n    \"payment_method\": \"flooz\",\n    \"phone_number\": \"{{paygate_test_phone}}\"\n}"
                         },
                         "auth": {
                             "type": "bearer",
@@ -5223,7 +5487,7 @@
                                 "payments"
                             ]
                         },
-                        "description": "Le montant est calcule serveur depuis la commande ; ne pas l envoyer dans le body."
+                        "description": "Le montant est calcule serveur depuis la commande ; ne pas l envoyer dans le body. Moyens acceptes : flooz | tmoney. Un vrai push USSD part vers PayGate : renseignez {{paygate_test_phone}} avec un numero mobile money valide, sinon la reponse est 502."
                     },
                     "event": [
                         {
@@ -5231,31 +5495,23 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "pm.test('status 201', () => pm.response.to.have.status(201));",
-                                    "{ const j = pm.response.json(); if (j.id) pm.collectionVariables.set('payment_id', j.id); }"
+                                    "pm.test('201 (push envoye) ou 502 (refus PayGate)', function () { pm.expect([201, 502]).to.include(pm.response.code); });",
+                                    "{ const j = pm.response.json(); if (j.payment && j.payment.id) pm.collectionVariables.set('payment_id', j.payment.id); }"
                                 ]
                             }
                         }
                     ]
                 },
                 {
-                    "name": "05. Confirmer le paiement (success) (200)",
+                    "name": "05. Verifier l etat du paiement (200)",
                     "request": {
                         "method": "POST",
                         "header": [
                             {
                                 "key": "Accept",
                                 "value": "application/json"
-                            },
-                            {
-                                "key": "Content-Type",
-                                "value": "application/json"
                             }
                         ],
-                        "body": {
-                            "mode": "raw",
-                            "raw": "{\n    \"outcome\": \"success\"\n}"
-                        },
                         "auth": {
                             "type": "bearer",
                             "bearer": [
@@ -5267,7 +5523,7 @@
                             ]
                         },
                         "url": {
-                            "raw": "{{base_url}}/api/payments/{{payment_id}}/confirm",
+                            "raw": "{{base_url}}/api/payments/{{payment_id}}/check",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -5275,9 +5531,10 @@
                                 "api",
                                 "payments",
                                 "{{payment_id}}",
-                                "confirm"
+                                "check"
                             ]
-                        }
+                        },
+                        "description": "Interroge PayGate (/api/v1/status). Tant que le client n a pas valide sur son telephone, le paiement reste 'pending'."
                     },
                     "event": [
                         {
@@ -5285,7 +5542,7 @@
                             "script": {
                                 "type": "text/javascript",
                                 "exec": [
-                                    "pm.test('status 200', () => pm.response.to.have.status(200));"
+                                    "pm.test('200 (etat lu) ou 502 (gateway injoignable)', function () { pm.expect([200, 502]).to.include(pm.response.code); });"
                                 ]
                             }
                         }

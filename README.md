@@ -6,7 +6,7 @@ Backend (API REST) de **TELU BAOBAB**, une plateforme numérique multifonctionne
 - **Immobilier** — hôtels, chambres, studios, appartements et maisons à louer, réservables directement.
 - **Emploi journalier** — les recruteurs publient des besoins, les chercheurs d'emploi postulent.
 
-Fonctionnalités transverses : géolocalisation, messagerie, système d'évaluation, paiement mobile (Flooz, TMoney, Mobile Money, carte), notifications automatiques.
+Fonctionnalités transverses : géolocalisation, messagerie, système d'évaluation, paiement mobile money via **PayGate Global** (Flooz et TMoney / Mixx by Yas), notifications automatiques.
 
 ## Stack technique
 
@@ -140,9 +140,42 @@ Importe-la dans Postman, puis lance les requêtes **dans l'ordre** au sein d'un 
 - ✅ Profils métier (5 types)
 - ✅ Commerce — produits (catalogue + gestion vendeur)
 - ✅ Commerce — commandes & livraison (parcours complet : commande → acceptation → livraison → confirmation)
-- 🔲 Immobilier (annonces, réservations)
-- 🔲 Emploi (offres, candidatures)
-- 🔲 Transverses (messagerie, évaluations, paiements, notifications)
+- ✅ Immobilier (annonces, réservations)
+- ✅ Emploi (offres, candidatures)
+- ✅ Transverses (messagerie, évaluations, notifications)
+- ✅ Paiements mobile money PayGate Global (Flooz / TMoney)
+- ✅ Vérification du numéro par code OTP SMS (AfrikSMS)
+- ✅ Back-office administrateur (`/api/admin/*`)
+
+### Configuration PayGate Global
+
+Renseigner dans `.env` (voir `.env.example`) :
+
+```
+PAYGATE_API_KEY=<clé API marchand>
+PAYGATE_BASE_URL=https://paygateglobal.com
+PAYGATE_CALLBACK_URL="${APP_URL}/api/payments/callback"
+```
+
+L'URL de callback doit également être déclarée sur le tableau de bord marchand PayGate.
+Le webhook n'étant pas signé, l'API re-interroge systématiquement PayGate
+(`/api/v2/status`) avant d'écrire le statut d'un paiement.
+
+### Configuration AfrikSMS (codes OTP)
+
+```
+AFRIKSMS_DRIVER=log            # log = SMS écrit dans les logs (dev) ; http = envoi réel
+AFRIKSMS_CLIENT_ID=<Identifiant Api>
+AFRIKSMS_API_KEY=<Clé d'authentification Api>
+AFRIKSMS_SENDER_ID=TELUBAOBAB  # 11 caractères max, à déclarer chez AfrikSMS
+
+OTP_REQUIRED_FOR_REGISTRATION=false   # true = numéro vérifié obligatoire à l'inscription
+```
+
+Parcours d'inscription vérifiée : `POST /api/auth/otp/send` → SMS → `POST /api/auth/otp/verify`
+(rend un `verification_token`) → `POST /api/auth/register` avec `otp_token`.
+Un utilisateur déjà connecté vérifie son propre numéro via `POST /api/otp/send` puis `POST /api/otp/verify`.
+Les réglages (durée de vie, quotas, gabarit du SMS) sont dans [`config/otp.php`](config/otp.php).
 
 ## Architecture
 

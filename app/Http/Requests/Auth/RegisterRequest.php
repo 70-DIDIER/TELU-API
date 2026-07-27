@@ -28,6 +28,19 @@ class RegisterRequest extends FormRequest
             'profile_photo' => ['nullable', 'string', 'max:255'],
             'current_latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'current_longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            // Jeton rendu par POST /api/auth/otp/verify ; devient obligatoire
+            // quand OTP_REQUIRED_FOR_REGISTRATION=true.
+            'otp_token' => [config('otp.required_for_registration') ? 'required' : 'nullable', 'string'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'otp_token.required' => 'Numéro non vérifié : validez le code reçu par SMS avant de créer le compte.',
         ];
     }
 }

@@ -160,6 +160,51 @@ $folders[] = folder('Auth', [
     req('Logout', 'POST', 'api/auth/logout', ['auth' => 'client_token', 'tests' => [assertStatus(200)]]),
 ]);
 
+// --- OTP - verification du numero par SMS -----------------------------------
+// Le code n'est jamais renvoye par l'API (il part uniquement par SMS) : ce
+// parcours est semi-manuel, on colle le code recu dans la variable {{otp_code}}.
+$folders[] = folder('OTP - Verification SMS', [
+    req('01. Envoyer un code (200)', 'POST', 'api/auth/otp/send', [
+        'auth' => 'noauth',
+        'body' => ['phone' => '{{otp_phone}}'],
+        'tests' => ["pm.test('200 (SMS parti), 409 (deja inscrit) ou 502 (passerelle KO)', function () { pm.expect([200, 409, 502]).to.include(pm.response.code); });"],
+        'desc' => 'Renseignez {{otp_phone}} avec un vrai numero togolais. Renvoi limite a 1 code / 60 s et 5 codes / heure par numero.',
+    ]),
+    req('02. Verifier le code (200)', 'POST', 'api/auth/otp/verify', [
+        'auth' => 'noauth',
+        'body' => ['phone' => '{{otp_phone}}', 'code' => '{{otp_code}}'],
+        'tests' => [
+            "pm.test('200 (verifie) ou 422 (code faux/expire)', function () { pm.expect([200, 422]).to.include(pm.response.code); });",
+            "{ const j = pm.response.json(); if (j.verification_token) pm.collectionVariables.set('otp_token', j.verification_token); }",
+        ],
+        'desc' => 'Collez dans {{otp_code}} le code recu par SMS. En cas de succes le jeton est capture dans {{otp_token}} (valable 30 min).',
+    ]),
+    req('03. Inscription avec le numero verifie (201)', 'POST', 'api/auth/register', [
+        'auth' => 'noauth',
+        'body' => [
+            'full_name' => 'Client verifie',
+            'phone' => '{{otp_phone}}',
+            'email' => 'otp-{{$guid}}@telu.tg',
+            'password' => 'secret123',
+            'password_confirmation' => 'secret123',
+            'user_type' => 'client',
+            'otp_token' => '{{otp_token}}',
+        ],
+        'tests' => [assertStatus(201), captureToken('otp_user_token')],
+        'desc' => 'Avec un otp_token valide le compte est cree avec is_verified=true et phone_verified_at renseigne.',
+    ]),
+    req('04. Envoyer un code sur mon propre numero (200)', 'POST', 'api/otp/send', [
+        'auth' => 'otp_user_token',
+        'tests' => ["pm.test('200, 409 (deja verifie) ou 502', function () { pm.expect([200, 409, 502]).to.include(pm.response.code); });"],
+        'desc' => 'Flux connecte : le code part vers le numero du compte, sans le passer dans le body.',
+    ]),
+    req('05. Verifier mon numero (200)', 'POST', 'api/otp/verify', [
+        'auth' => 'otp_user_token',
+        'body' => ['code' => '{{otp_code}}'],
+        'tests' => ["pm.test('200, 409 (deja verifie) ou 422', function () { pm.expect([200, 409, 422]).to.include(pm.response.code); });"],
+    ]),
+]);
+
 // --- Business profiles (one folder each) ------------------------------------
 $profiles = [
     ['Profil Vendeur', 'vendor', 'vendor', ['shop_name' => 'Boutique {{$randomInt}}', 'description' => 'Vente au detail']],
@@ -363,7 +408,7 @@ $folders[] = folder('Evaluations', [
     req('3. Mes evaluations (200)', 'GET', 'api/my-ratings', ['auth' => 'client_token', 'tests' => [assertStatus(200)]]),
 ]);
 
-// --- Paiements (simules, parcours auto-suffisant) ---------------------------
+// --- Paiements (PayGate Global, parcours auto-suffisant) --------------------
 // Self-contained: builds its own order so the payer owns the reference,
 // independent of client_token being reassigned by earlier folders.
 $folders[] = folder('Paiements', [
@@ -376,16 +421,19 @@ $folders[] = folder('Paiements', [
         'body' => ['vendor_id' => '{{pay_vendor_id}}', 'delivery_address' => 'Lome', 'items' => [['product_id' => '{{pay_product_id}}', 'quantity' => 3]]],
         'tests' => [assertStatus(201), captureId('pay_order_id')],
     ]),
-    req('04. Payer la commande - mobile_money (201)', 'POST', 'api/payments', [
+    req('04. Payer la commande - flooz (201)', 'POST', 'api/payments', [
         'auth' => 'pay_client_token',
-        'body' => ['reference_type' => 'order', 'reference_id' => '{{pay_order_id}}', 'payment_method' => 'mobile_money'],
-        'tests' => [assertStatus(201), captureId('payment_id')],
-        'desc' => 'Le montant est calcule serveur depuis la commande ; ne pas l envoyer dans le body.',
+        'body' => ['reference_type' => 'order', 'reference_id' => '{{pay_order_id}}', 'payment_method' => 'flooz', 'phone_number' => '{{paygate_test_phone}}'],
+        'tests' => [
+            "pm.test('201 (push envoye) ou 502 (refus PayGate)', function () { pm.expect([201, 502]).to.include(pm.response.code); });",
+            "{ const j = pm.response.json(); if (j.payment && j.payment.id) pm.collectionVariables.set('payment_id', j.payment.id); }",
+        ],
+        'desc' => 'Le montant est calcule serveur depuis la commande ; ne pas l envoyer dans le body. Moyens acceptes : flooz | tmoney. Un vrai push USSD part vers PayGate : renseignez {{paygate_test_phone}} avec un numero mobile money valide, sinon la reponse est 502.',
     ]),
-    req('05. Confirmer le paiement (success) (200)', 'POST', 'api/payments/{{payment_id}}/confirm', [
+    req('05. Verifier l etat du paiement (200)', 'POST', 'api/payments/{{payment_id}}/check', [
         'auth' => 'pay_client_token',
-        'body' => ['outcome' => 'success'],
-        'tests' => [assertStatus(200)],
+        'tests' => ["pm.test('200 (etat lu) ou 502 (gateway injoignable)', function () { pm.expect([200, 502]).to.include(pm.response.code); });"],
+        'desc' => "Interroge PayGate (/api/v1/status). Tant que le client n a pas valide sur son telephone, le paiement reste 'pending'.",
     ]),
     req('06. Lister mes paiements (200)', 'GET', 'api/payments', ['auth' => 'pay_client_token', 'tests' => [assertStatus(200)]]),
     req('07. Filtrer par statut (200)', 'GET', 'api/payments', ['auth' => 'pay_client_token', 'query' => ['status' => 'success'], 'tests' => [assertStatus(200)]]),
@@ -405,6 +453,8 @@ $variableKeys = [
     'property_id' => '', 'reservation_id' => '',
     'job_offer_id' => '', 'application_id' => '',
     'notification_id' => '', 'payment_id' => '',
+    'paygate_test_phone' => '90000000',
+    'otp_phone' => '90000000', 'otp_code' => '', 'otp_token' => '', 'otp_user_token' => '',
     'msg_a_token' => '', 'msg_b_token' => '', 'msg_a_user_id' => '', 'msg_b_user_id' => '',
     'client_user_id' => '', 'vendor_user_id' => '',
     'pay_vendor_token' => '', 'pay_client_token' => '', 'pay_vendor_id' => '', 'pay_product_id' => '', 'pay_order_id' => '',
@@ -417,7 +467,7 @@ foreach ($variableKeys as $k => $v) {
 $collection = [
     'info' => [
         'name' => 'TELU BAOBAB API',
-        'description' => 'Collection generee par postman/build_collection.php — ne pas editer a la main. Couvre auth, les 5 profils metier, Commerce/Livraison, Immobilier, Emploi, Notifications, Messagerie, Evaluations et Paiements.',
+        'description' => 'Collection generee par postman/build_collection.php — ne pas editer a la main. Couvre auth, les 5 profils metier, Commerce/Livraison, Immobilier, Emploi, Notifications, Messagerie, Evaluations et Paiements (PayGate Global — Flooz / TMoney).',
         'schema' => 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     ],
     'auth' => ['type' => 'bearer', 'bearer' => [['key' => 'token', 'value' => '{{token}}', 'type' => 'string']]],

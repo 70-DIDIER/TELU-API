@@ -21,11 +21,13 @@ class PaymentFactory extends Factory
         return [
             'user_id' => User::factory(),
             'amount' => fake()->randomFloat(2, 500, 100000),
-            'payment_method' => fake()->randomElement(['flooz', 'tmoney', 'card']),
+            'payment_method' => fake()->randomElement(['flooz', 'tmoney']),
             'reference_type' => 'order',
             'reference_id' => Order::factory(),
             'status' => fake()->randomElement(['pending', 'success', 'failed', 'refunded']),
             'transaction_id' => fake()->optional()->uuid(),
+            'identifier' => 'TELU-'.strtoupper(Str::random(12)),
+            'phone_number' => '9'.fake()->numerify('#######'),
         ];
     }
 

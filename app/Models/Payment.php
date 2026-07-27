@@ -16,6 +16,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'reference_id',
     'status',
     'transaction_id',
+    'identifier',
+    'payment_reference',
+    'phone_number',
+    'paid_at',
 ])]
 class Payment extends Model
 {
@@ -28,6 +32,7 @@ class Payment extends Model
     {
         return [
             'amount' => 'decimal:2',
+            'paid_at' => 'datetime',
         ];
     }
 
