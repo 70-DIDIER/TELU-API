@@ -8,7 +8,10 @@ use App\Http\Requests\StorePaymentRequest;
 use App\Models\Order;
 use App\Models\Payment;
 use App\Models\Reservation;
+use App\Models\Setting;
 use App\Models\Subscription;
+use App\Models\User;
+use App\Services\CommerceLedger;
 use App\Services\Notifier;
 use App\Services\PayGate;
 use Illuminate\Http\JsonResponse;
@@ -61,7 +64,7 @@ class PaymentController extends Controller
         $data = $request->validated();
         $user = $request->user();
 
-        $amount = $this->resolveAmount($data['reference_type'], $data['reference_id'], $user->id);
+        $amount = $this->resolveAmount($data['reference_type'], $data['reference_id'], $user);
 
         if ($amount instanceof JsonResponse) {
             return $amount; // 404 not found / 403 not owned.
@@ -92,7 +95,10 @@ class PaymentController extends Controller
 
         $result = $this->payGate->requestPayment(
             phoneNumber: $data['phone_number'],
-            amount: (float) $amount,
+            // PayGate exige un montant entier en XOF (pas de décimales) ; un float
+            // PHP se sérialise toujours avec un point décimal en JSON et se fait
+            // rejeter en 400 par leur API — voir App\Services\PayGate::requestPayment().
+            amount: (int) round($amount),
             identifier: $identifier,
             paymentMethod: $data['payment_method'],
             description: $this->describe($data['reference_type'], $data['reference_id']),
@@ -187,6 +193,9 @@ class PaymentController extends Controller
 
     /**
      * Persist a resolved gateway status on a pending payment and notify the user.
+     * On success, also records PayGate's own cut (informational, absorbed by
+     * the platform margin) and triggers the side effect for this reference
+     * type: order → settle vendor/driver wallets, subscription → activate plan.
      *
      * @param  array<string, mixed>  $gateway
      */
@@ -203,6 +212,9 @@ class PaymentController extends Controller
             'transaction_id' => $payment->transaction_id ?: ($gateway['tx_reference'] ?? null),
             'payment_reference' => $gateway['payment_reference'] ?? null,
             'paid_at' => $status === 'success' ? now() : null,
+            'paygate_fee_amount' => $status === 'success'
+                ? round((float) $payment->amount * $this->paygateFeeRate($payment->payment_method), 2)
+                : null,
         ]);
 
         Notifier::send(
@@ -212,6 +224,97 @@ class PaymentController extends Controller
                 ? "Paiement de {$payment->amount} FCFA confirmé."
                 : "Votre paiement de {$payment->amount} FCFA n'a pas abouti."
         );
+
+        if ($status !== 'success') {
+            return;
+        }
+
+        if ($payment->reference_type === 'order') {
+            $order = Order::find($payment->reference_id);
+
+            if ($order) {
+                CommerceLedger::settleOrderIfReady($order);
+            }
+        } elseif ($payment->reference_type === 'subscription') {
+            $this->activateSubscription($payment);
+        }
+    }
+
+    /**
+     * PayGate's public tariff (2.5% Flooz / 3% TMoney) — backoffice-editable,
+     * never returned by their API so we compute it ourselves for reporting.
+     */
+    private function paygateFeeRate(string $paymentMethod): float
+    {
+        return match ($paymentMethod) {
+            'flooz' => (float) Setting::get('paygate_fee_flooz', 0.025),
+            'tmoney' => (float) Setting::get('paygate_fee_tmoney', 0.03),
+            default => 0.0,
+        };
+    }
+
+    /**
+     * Activate the subscription plan on the profile matching the payer's
+     * account and the plan's subscriber_type. Previously a no-op: paying for
+     * a subscription only ever recorded the Payment, nothing else.
+     */
+    private function activateSubscription(Payment $payment): void
+    {
+        $subscription = Subscription::find($payment->reference_id);
+
+        if (! $subscription) {
+            // Paiement réussi mais plan introuvable : à investiguer (plan supprimé ?).
+            Log::warning('Paiement abonnement confirmé sans plan correspondant', [
+                'payment_id' => $payment->id,
+                'reference_id' => $payment->reference_id,
+            ]);
+
+            return;
+        }
+
+        $payment->loadMissing('user');
+        $profile = $this->subscriberProfile($subscription->subscriber_type, $payment->user);
+
+        if (! $profile) {
+            // Paiement réussi mais le payeur n'a plus le profil requis : abonnement
+            // encaissé sans effet — resolveAmount bloque normalement ce cas en amont.
+            Log::warning('Paiement abonnement confirmé sans profil abonnable', [
+                'payment_id' => $payment->id,
+                'user_id' => $payment->user_id,
+                'subscriber_type' => $subscription->subscriber_type,
+            ]);
+
+            return;
+        }
+
+        $expiresAt = now()->addDays($subscription->duration_days);
+
+        $profile->update([
+            'subscription_id' => $subscription->id,
+            'subscription_started_at' => now(),
+            'subscription_expires_at' => $expiresAt,
+        ]);
+
+        Notifier::send(
+            $payment->user_id,
+            'subscription',
+            "Votre abonnement « {$subscription->name} » est actif jusqu'au {$expiresAt->format('d/m/Y')}."
+        );
+    }
+
+    /**
+     * Resolve the profile matching a plan's subscriber_type on a given user
+     * (property_owner/recruiter — the only two subscriber types; vendors and
+     * drivers are commission-based and never hold a subscription), or null if
+     * they don't have one.
+     */
+    private function subscriberProfile(string $subscriberType, User $user): mixed
+    {
+        return match ($subscriberType) {
+            'property_owner' => $user->propertyOwner,
+            'recruiter' => $user->recruiter,
+            default => null,
+        };
     }
 
     /**
@@ -233,7 +336,7 @@ class PaymentController extends Controller
      * Resolve the payable amount for a reference, enforcing ownership.
      * Returns the amount, or a JsonResponse error (404/403).
      */
-    private function resolveAmount(string $type, string $referenceId, string $userId): float|JsonResponse
+    private function resolveAmount(string $type, string $referenceId, User $user): float|JsonResponse
     {
         switch ($type) {
             case 'order':
@@ -241,7 +344,7 @@ class PaymentController extends Controller
                 if (! $order) {
                     return response()->json(['message' => 'Commande introuvable.'], 404);
                 }
-                if ($order->customer_id !== $userId) {
+                if ($order->customer_id !== $user->id) {
                     return response()->json(['message' => 'Cette commande ne vous appartient pas.'], 403);
                 }
 
@@ -252,7 +355,7 @@ class PaymentController extends Controller
                 if (! $reservation) {
                     return response()->json(['message' => 'Réservation introuvable.'], 404);
                 }
-                if ($reservation->customer_id !== $userId) {
+                if ($reservation->customer_id !== $user->id) {
                     return response()->json(['message' => 'Cette réservation ne vous appartient pas.'], 403);
                 }
 
@@ -262,6 +365,12 @@ class PaymentController extends Controller
                 $subscription = Subscription::find($referenceId);
                 if (! $subscription) {
                     return response()->json(['message' => 'Abonnement introuvable.'], 404);
+                }
+
+                if (! $this->subscriberProfile($subscription->subscriber_type, $user)) {
+                    return response()->json([
+                        'message' => 'Vous devez d\'abord créer le profil correspondant à ce type d\'abonnement.',
+                    ], 403);
                 }
 
                 return (float) $subscription->price;

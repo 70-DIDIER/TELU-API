@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Delivery;
 use App\Models\Driver;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
@@ -155,6 +156,88 @@ class DeliveryFlowTest extends TestCase
             'user_id' => $this->driverUser->id,
             'type' => 'delivery',
         ]);
+    }
+
+    public function test_the_driver_can_mark_a_picked_up_delivery_as_delivered(): void
+    {
+        $customer = User::factory()->type('client')->create();
+        $order = Order::factory()->create(['customer_id' => $customer->id, 'status' => 'in_delivery']);
+        $delivery = Delivery::factory()->create([
+            'order_id' => $order->id,
+            'driver_id' => $this->driver->id,
+            'status' => 'picked_up',
+            'assigned_at' => now(),
+            'pickup_time' => now(),
+        ]);
+
+        $this->postJson("/api/driver/deliveries/{$delivery->id}/deliver")
+            ->assertOk()
+            ->assertJsonPath('status', 'delivered');
+
+        $this->assertSame('delivered', $order->fresh()->status);
+        $this->assertNotNull($delivery->fresh()->delivery_time);
+
+        // Both the customer and the vendor are notified of the delivery.
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $order->customer_id,
+            'type' => 'delivery',
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $order->vendor->user_id,
+            'type' => 'order',
+        ]);
+    }
+
+    public function test_driver_delivery_settles_the_wallets_when_the_order_is_already_paid(): void
+    {
+        $customer = User::factory()->type('client')->create();
+        $order = Order::factory()->create([
+            'customer_id' => $customer->id,
+            'status' => 'in_delivery',
+            'vendor_net_amount' => 1800,
+        ]);
+        $delivery = Delivery::factory()->create([
+            'order_id' => $order->id,
+            'driver_id' => $this->driver->id,
+            'status' => 'picked_up',
+            'assigned_at' => now(),
+            'pickup_time' => now(),
+            'driver_net_amount' => 850,
+        ]);
+
+        Payment::factory()->successful()->create([
+            'user_id' => $customer->id,
+            'amount' => $order->total_amount,
+            'reference_type' => 'order',
+            'reference_id' => $order->id,
+        ]);
+
+        $this->postJson("/api/driver/deliveries/{$delivery->id}/deliver")->assertOk();
+
+        $this->assertNotNull($order->fresh()->wallet_settled_at);
+        $this->assertEquals(850.0, (float) $this->driver->fresh()->wallet->balance);
+    }
+
+    public function test_deliver_is_rejected_from_a_wrong_status(): void
+    {
+        $delivery = Delivery::factory()->create([
+            'driver_id' => $this->driver->id,
+            'status' => 'assigned',
+            'assigned_at' => now(),
+        ]);
+
+        $this->postJson("/api/driver/deliveries/{$delivery->id}/deliver")->assertUnprocessable();
+    }
+
+    public function test_a_driver_cannot_deliver_another_drivers_delivery(): void
+    {
+        $foreign = Delivery::factory()->create([
+            'status' => 'picked_up',
+            'assigned_at' => now(),
+            'pickup_time' => now(),
+        ]);
+
+        $this->postJson("/api/driver/deliveries/{$foreign->id}/deliver")->assertNotFound();
     }
 
     public function test_receipt_cannot_be_confirmed_before_the_delivery_starts(): void

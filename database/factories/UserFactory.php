@@ -28,7 +28,9 @@ class UserFactory extends Factory
             'full_name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
             'phone' => fake()->unique()->numerify('+228 9# ## ## ##'),
-            'profile_photo' => null,
+            // Portraits réalistes via pravatar.cc ; 25% de null conservés pour
+            // continuer à tester le repli "initiales" de l'Avatar côté mobile.
+            'profile_photo' => fake()->optional(0.75)->passthrough('https://i.pravatar.cc/300?u='.fake()->uuid()),
             'user_type' => fake()->randomElement([
                 'client', 'vendor', 'driver', 'property_owner', 'recruiter', 'job_seeker',
             ]),

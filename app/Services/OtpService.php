@@ -10,16 +10,21 @@ use Illuminate\Support\Str;
 /**
  * Cycle de vie des codes OTP envoyés par SMS (AfrikSMS).
  *
- * Deux usages (`purpose`) :
+ * Trois usages (`purpose`) :
  *  - `registration` : valider un numéro qui n'a pas encore de compte ; la
  *    vérification rend un jeton à présenter à POST /api/auth/register ;
- *  - `verification` : un utilisateur connecté confirme son propre numéro.
+ *  - `verification` : un utilisateur connecté confirme son propre numéro ;
+ *  - `password_reset` : mot de passe oublié ; la vérification rend un jeton à
+ *    présenter à POST /api/auth/password/reset.
  *
  * Le code n'est jamais stocké en clair et n'est jamais renvoyé dans une réponse
  * HTTP : il ne transite que par SMS.
  */
 class OtpService
 {
+    /** Usages dont la vérification débouche sur un jeton à échanger ensuite. */
+    private const TOKEN_PURPOSES = ['registration', 'password_reset'];
+
     public function __construct(private readonly AfrikSms $sms) {}
 
     /**
@@ -92,8 +97,9 @@ class OtpService
     }
 
     /**
-     * Vérifie un code. En cas de succès sur `registration`, un jeton à usage
-     * unique est généré et renvoyé dans `OtpCode::verification_token`.
+     * Vérifie un code. En cas de succès sur `registration` ou `password_reset`,
+     * un jeton à usage unique est généré et renvoyé dans
+     * `OtpCode::verification_token`.
      *
      * @return array{ok: bool, otp?: OtpCode, message?: string, attempts_left?: int, status?: int}
      */
@@ -140,21 +146,31 @@ class OtpService
             ];
         }
 
+        $withToken = in_array($purpose, self::TOKEN_PURPOSES, true);
+
         $otp->update([
             'verified_at' => now(),
-            'verification_token' => $purpose === 'registration' ? Str::random(64) : null,
+            'verification_token' => $withToken ? Str::random(64) : null,
             // Une vérification par un utilisateur connecté est immédiatement finale.
-            'consumed_at' => $purpose === 'registration' ? null : now(),
+            'consumed_at' => $withToken ? null : now(),
         ]);
 
         return ['ok' => true, 'otp' => $otp->fresh()];
     }
 
     /**
-     * Consomme le jeton remis après vérification, pour le numéro donné.
-     * Renvoie false si le jeton est inconnu, expiré ou déjà utilisé.
+     * Consomme le jeton remis après vérification du numéro, avant inscription.
      */
     public function redeemRegistrationToken(string $phone, ?string $token): bool
+    {
+        return $this->redeemToken($phone, $token, 'registration');
+    }
+
+    /**
+     * Consomme le jeton remis après vérification, pour le numéro et l'usage
+     * donnés. Renvoie false si le jeton est inconnu, expiré ou déjà utilisé.
+     */
+    public function redeemToken(string $phone, ?string $token, string $purpose): bool
     {
         if (blank($token)) {
             return false;
@@ -162,7 +178,7 @@ class OtpService
 
         $otp = OtpCode::where('verification_token', $token)
             ->where('phone', PhoneNumber::international($phone))
-            ->where('purpose', 'registration')
+            ->where('purpose', $purpose)
             ->whereNotNull('verified_at')
             ->whereNull('consumed_at')
             ->first();

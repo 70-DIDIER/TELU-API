@@ -33,17 +33,19 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // --- Subscription plans (referenced by vendors/drivers) -------------
-        $vendorPlans = collect(['Basic', 'Premium'])->map(
-            fn (string $name) => Subscription::factory()->create([
-                'name' => $name,
-                'subscriber_type' => 'vendor',
-            ])
-        );
+        // --- Backoffice settings (commission rates, delivery pricing, quotas) -
+        $this->call(SettingSeeder::class);
 
-        $driverPlan = Subscription::factory()->create([
-            'name' => 'Driver Pro',
-            'subscriber_type' => 'driver',
+        // --- Subscription plans (only property owners/recruiters subscribe —
+        // vendors/drivers are monetised by commission, see CommerceLedger/HasWallet)
+        $ownerPlan = Subscription::factory()->create([
+            'name' => 'Vitrine Immobilier',
+            'subscriber_type' => 'property_owner',
+        ]);
+
+        $recruiterPlan = Subscription::factory()->create([
+            'name' => 'Recruteur Pro',
+            'subscriber_type' => 'recruiter',
         ]);
 
         // --- Well-known accounts for manual testing -------------------------
@@ -64,18 +66,88 @@ class DatabaseSeeder extends Seeder
         // Pool of clients that place orders / reservations / receive messages.
         $clients = User::factory()->type('client')->count(15)->create()->push($testClient);
 
+        // --- Well-known business-actor accounts (password "password"), one per
+        // user_type, for manually testing every mobile flow end-to-end -------
+        $testVendorUser = User::factory()->type('vendor')->create([
+            'full_name' => 'Vendeur Test',
+            'email' => 'vendor@telu.tg',
+            'phone' => '+228 92 00 00 00',
+            'is_verified' => true,
+        ]);
+        $testVendor = Vendor::factory()->create([
+            'user_id' => $testVendorUser->id,
+            'shop_name' => 'Boutique TELU Test',
+            'is_active' => true,
+        ]);
+        Product::factory()->count(6)->create(['vendor_id' => $testVendor->id, 'is_available' => true, 'stock' => 25]);
+        // Commerce est monétisé par commission (pas d'abonnement) : le portefeuille
+        // est directement testable avec un solde de départ.
+        $testVendor->creditWallet(27500, 'order', null, 'Solde de test (seed)');
+
+        $testDriverUser = User::factory()->type('driver')->create([
+            'full_name' => 'Livreur Test',
+            'email' => 'driver@telu.tg',
+            'phone' => '+228 93 00 00 00',
+            'is_verified' => true,
+        ]);
+        $testDriver = Driver::factory()->create([
+            'user_id' => $testDriverUser->id,
+            'is_available' => true,
+        ]);
+        // Livraison est monétisée par commission (pas d'abonnement).
+        $testDriver->creditWallet(8500, 'delivery', null, 'Solde de test (seed)');
+
+        $testOwnerUser = User::factory()->type('property_owner')->create([
+            'full_name' => 'Propriétaire Test',
+            'email' => 'owner@telu.tg',
+            'phone' => '+228 94 00 00 00',
+            'is_verified' => true,
+        ]);
+        $testOwner = PropertyOwner::factory()->create([
+            'user_id' => $testOwnerUser->id,
+            'owner_type' => 'hotel',
+            'company_name' => 'Hôtel TELU Test',
+            // Abonnement démarré aujourd'hui, garanti actif : ses biens apparaissent
+            // "Sponsorisé" dans le catalogue.
+            'subscription_id' => $ownerPlan->id,
+            'subscription_started_at' => now(),
+            'subscription_expires_at' => now()->addDays($ownerPlan->duration_days),
+        ]);
+        Property::factory()->count(3)->create(['owner_id' => $testOwner->id, 'is_available' => true]);
+
+        $testRecruiterUser = User::factory()->type('recruiter')->create([
+            'full_name' => 'Recruteur Test',
+            'email' => 'recruiter@telu.tg',
+            'phone' => '+228 95 00 00 00',
+            'is_verified' => true,
+        ]);
+        $testRecruiter = Recruiter::factory()->create([
+            'user_id' => $testRecruiterUser->id,
+            'company_name' => 'TELU Recrutement Test',
+            // Pas d'abonnement, déjà au quota gratuit (3 offres) : la création d'une
+            // 4e offre déclenche immédiatement le 403 "quota atteint" côté mobile.
+            ...$this->subscriptionState(null),
+        ]);
+        JobOffer::factory()->count(3)->create(['recruiter_id' => $testRecruiter->id, 'is_active' => true]);
+
+        $testJobSeekerUser = User::factory()->type('job_seeker')->create([
+            'full_name' => 'Chercheur Test',
+            'email' => 'jobseeker@telu.tg',
+            'phone' => '+228 96 00 00 00',
+            'is_verified' => true,
+        ]);
+        JobSeeker::factory()->create([
+            'user_id' => $testJobSeekerUser->id,
+            'profession' => 'Menuisier',
+            'availability' => 'immediate',
+        ]);
+
         // --- Delivery drivers ----------------------------------------------
-        $drivers = collect(range(1, 5))->map(
-            fn () => Driver::factory()->create([
-                'subscription_id' => fake()->boolean(60) ? $driverPlan->id : null,
-            ])
-        );
+        $drivers = collect(range(1, 5))->map(fn () => Driver::factory()->create());
 
         // --- Commerce: vendors -> products -> orders -> items/delivery/payment
-        collect(range(1, 8))->each(function () use ($vendorPlans, $clients, $drivers) {
-            $vendor = Vendor::factory()->create([
-                'subscription_id' => fake()->boolean(70) ? $vendorPlans->random()->id : null,
-            ]);
+        collect(range(1, 8))->each(function () use ($clients, $drivers) {
+            $vendor = Vendor::factory()->create();
 
             $products = Product::factory()
                 ->count(fake()->numberBetween(4, 10))
@@ -135,8 +207,10 @@ class DatabaseSeeder extends Seeder
         });
 
         // --- Real estate: owners -> properties -> reservations --------------
-        collect(range(1, 5))->each(function () use ($clients) {
-            $owner = PropertyOwner::factory()->create();
+        collect(range(1, 5))->each(function () use ($clients, $ownerPlan) {
+            $owner = PropertyOwner::factory()->create(
+                $this->subscriptionState(fake()->boolean(40) ? $ownerPlan : null)
+            );
 
             Property::factory()
                 ->count(fake()->numberBetween(1, 4))
@@ -164,8 +238,10 @@ class DatabaseSeeder extends Seeder
         // --- Jobs: recruiters -> offers, and seekers -> applications --------
         $jobSeekers = JobSeeker::factory()->count(10)->create();
 
-        collect(range(1, 4))->each(function () use ($jobSeekers) {
-            $recruiter = Recruiter::factory()->create();
+        collect(range(1, 4))->each(function () use ($jobSeekers, $recruiterPlan) {
+            $recruiter = Recruiter::factory()->create(
+                $this->subscriptionState(fake()->boolean(40) ? $recruiterPlan : null)
+            );
 
             JobOffer::factory()
                 ->count(fake()->numberBetween(1, 3))
@@ -206,5 +282,27 @@ class DatabaseSeeder extends Seeder
         $allUsers->random(10)->each(fn (User $user) => Notification::factory()
             ->count(fake()->numberBetween(1, 3))
             ->create(['user_id' => $user->id]));
+    }
+
+    /**
+     * subscription_id + a realistic started_at/expires_at window (or all-null)
+     * for either subscriber profile (property_owner/recruiter — the only two
+     * that actually subscribe; vendors/drivers are commission-based).
+     *
+     * @return array<string, mixed>
+     */
+    private function subscriptionState(?Subscription $plan): array
+    {
+        if (! $plan) {
+            return ['subscription_id' => null, 'subscription_started_at' => null, 'subscription_expires_at' => null];
+        }
+
+        $startedAt = now()->subDays(fake()->numberBetween(0, 20));
+
+        return [
+            'subscription_id' => $plan->id,
+            'subscription_started_at' => $startedAt,
+            'subscription_expires_at' => $startedAt->copy()->addDays($plan->duration_days),
+        ];
     }
 }

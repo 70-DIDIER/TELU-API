@@ -30,9 +30,11 @@ class RecruiterController extends Controller
     {
         $user = $request->user();
 
-        if ($user->user_type !== 'recruiter') {
+        // Le compte client est standard : n'importe quel compte non-admin peut
+        // compléter son compte d'un profil recruteur (cumul de profils autorisé).
+        if ($user->user_type === 'admin') {
             return response()->json([
-                'message' => 'Seul un compte de type recruteur peut créer un profil recruteur.',
+                'message' => 'Un compte administrateur ne peut pas créer de profil recruteur.',
             ], 403);
         }
 

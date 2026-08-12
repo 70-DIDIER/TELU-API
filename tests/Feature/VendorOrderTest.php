@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Driver;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
@@ -132,6 +133,36 @@ class VendorOrderTest extends TestCase
         $this->patchJson("/api/vendor/orders/{$order->id}/status", ['status' => 'cancelled'])->assertOk();
 
         $this->assertSame(10, $product->fresh()->stock);
+    }
+
+    public function test_cancelling_a_paid_order_flags_the_payment_as_refunded_and_notifies_the_customer(): void
+    {
+        $product = $this->product(stock: 10);
+        $order = $this->pendingOrder($product, quantity: 2);
+
+        $payment = Payment::factory()->successful()->create([
+            'user_id' => $order->customer_id,
+            'amount' => $order->total_amount,
+            'reference_type' => 'order',
+            'reference_id' => $order->id,
+        ]);
+
+        $this->patchJson("/api/vendor/orders/{$order->id}/status", ['status' => 'cancelled'])->assertOk();
+
+        $this->assertDatabaseHas('payments', ['id' => $payment->id, 'status' => 'refunded']);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $order->customer_id,
+            'type' => 'payment',
+        ]);
+    }
+
+    public function test_cancelling_an_unpaid_order_creates_no_refund(): void
+    {
+        $order = $this->pendingOrder($this->product());
+
+        $this->patchJson("/api/vendor/orders/{$order->id}/status", ['status' => 'cancelled'])->assertOk();
+
+        $this->assertDatabaseMissing('payments', ['reference_id' => $order->id, 'status' => 'refunded']);
     }
 
     public function test_another_vendors_order_is_unreachable(): void

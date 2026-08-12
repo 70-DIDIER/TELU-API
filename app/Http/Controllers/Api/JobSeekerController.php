@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Profile\JobSeekerProfileRequest;
+use App\Models\JobSeeker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -30,9 +31,11 @@ class JobSeekerController extends Controller
     {
         $user = $request->user();
 
-        if ($user->user_type !== 'job_seeker') {
+        // Le compte client est standard : n'importe quel compte non-admin peut
+        // compléter son compte d'un profil chercheur d'emploi (cumul autorisé).
+        if ($user->user_type === 'admin') {
             return response()->json([
-                'message' => 'Seul un compte de type chercheur d\'emploi peut créer ce profil.',
+                'message' => 'Un compte administrateur ne peut pas créer ce profil.',
             ], 403);
         }
 
@@ -61,5 +64,39 @@ class JobSeekerController extends Controller
         $seeker->update($request->validated());
 
         return response()->json($seeker);
+    }
+
+    /**
+     * Browse/search the public directory of job seekers ("find talent").
+     *
+     * Supported query params: search (profession), availability.
+     */
+    public function browse(Request $request): JsonResponse
+    {
+        $seekers = JobSeeker::query()
+            ->with('user:id,full_name,profile_photo,current_latitude,current_longitude')
+            ->when($request->filled('search'), fn ($q) => $q->where('profession', 'like', '%'.$request->string('search').'%'))
+            ->when($request->filled('availability'), fn ($q) => $q->where('availability', 'like', '%'.$request->string('availability').'%'))
+            ->latest()
+            ->paginate(20)
+            ->withQueryString();
+
+        return response()->json($seekers);
+    }
+
+    /**
+     * Show a single job seeker's public profile.
+     */
+    public function showPublic(string $jobSeeker): JsonResponse
+    {
+        $found = JobSeeker::query()
+            ->with('user:id,full_name,profile_photo,current_latitude,current_longitude')
+            ->find($jobSeeker);
+
+        if (! $found) {
+            return response()->json(['message' => 'Profil introuvable.'], 404);
+        }
+
+        return response()->json($found);
     }
 }

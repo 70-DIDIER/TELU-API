@@ -18,7 +18,6 @@ class VendorFactory extends Factory
     {
         return [
             'user_id' => User::factory()->type('vendor'),
-            'subscription_id' => null,
             'shop_name' => fake()->company(),
             'description' => fake()->optional()->sentence(),
             'address' => fake()->streetAddress(),

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\PropertyRequest;
 use App\Models\Property;
 use App\Models\PropertyOwner;
+use App\Models\Setting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -36,6 +37,16 @@ class OwnerPropertyController extends Controller
 
         if (! $owner instanceof PropertyOwner) {
             return $owner;
+        }
+
+        if (! $owner->hasActiveSubscription()) {
+            $quota = (int) Setting::get('property_free_quota', 3);
+
+            if ($owner->properties()->count() >= $quota) {
+                return response()->json([
+                    'message' => "Quota gratuit atteint ({$quota} annonces). Souscrivez à un abonnement pour publier sans limite et être mis en avant.",
+                ], 403);
+            }
         }
 
         $property = $owner->properties()->create($request->validated());

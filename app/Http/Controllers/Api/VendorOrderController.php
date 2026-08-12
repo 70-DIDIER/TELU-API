@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateOrderStatusRequest;
 use App\Models\Driver;
 use App\Models\Order;
+use App\Models\Payment;
+use App\Models\Setting;
 use App\Models\Vendor;
 use App\Services\Notifier;
 use Illuminate\Http\JsonResponse;
@@ -107,8 +109,11 @@ class VendorOrderController extends Controller
             if ($target === 'accepted') {
                 $this->deductStock($found);
                 $this->openDelivery($found);
-            } elseif ($target === 'cancelled' && \in_array($found->status, self::STOCK_HELD, true)) {
-                $this->restoreStock($found);
+            } elseif ($target === 'cancelled') {
+                if (\in_array($found->status, self::STOCK_HELD, true)) {
+                    $this->restoreStock($found);
+                }
+                $this->refundIfPaid($found);
             }
 
             $found->update(['status' => $target]);
@@ -148,6 +153,35 @@ class VendorOrderController extends Controller
     }
 
     /**
+     * Flag any successful payment for a cancelled order as refunded and notify
+     * the customer. The actual mobile-money disbursement is processed out of
+     * band by an admin (same manual flow as withdrawals); this closes the audit
+     * trail so a paid-then-refused order never silently keeps the customer's
+     * money. Safe here because a cancellable order is never wallet-settled
+     * (settlement only happens at 'delivered').
+     */
+    private function refundIfPaid(Order $order): void
+    {
+        $payment = Payment::query()
+            ->where('reference_type', 'order')
+            ->where('reference_id', $order->id)
+            ->where('status', 'success')
+            ->first();
+
+        if (! $payment) {
+            return;
+        }
+
+        $payment->update(['status' => 'refunded']);
+
+        Notifier::send(
+            $order->customer_id,
+            'payment',
+            "Votre commande a été annulée. Le remboursement de {$payment->amount} FCFA est en cours de traitement."
+        );
+    }
+
+    /**
      * Give back the ordered quantities to stock.
      */
     private function restoreStock(Order $order): void
@@ -164,10 +198,16 @@ class VendorOrderController extends Controller
      */
     private function openDelivery(Order $order): void
     {
+        $commissionRate = (float) Setting::get('commission_rate_delivery', 0.15);
+        $commissionAmount = round((float) $order->delivery_fee * $commissionRate, 2);
+        $driverNetAmount = round((float) $order->delivery_fee - $commissionAmount, 2);
+
         // Idempotent: one delivery per order.
         $order->delivery()->firstOrCreate([], [
             'status' => 'awaiting_driver',
-            'delivery_fee' => 0,
+            'delivery_fee' => $order->delivery_fee,
+            'commission_amount' => $commissionAmount,
+            'driver_net_amount' => $driverNetAmount,
         ]);
 
         $driverUserIds = Driver::query()

@@ -30,13 +30,13 @@ class Subscription extends Model
         ];
     }
 
-    public function vendors(): HasMany
+    public function propertyOwners(): HasMany
     {
-        return $this->hasMany(Vendor::class);
+        return $this->hasMany(PropertyOwner::class);
     }
 
-    public function drivers(): HasMany
+    public function recruiters(): HasMany
     {
-        return $this->hasMany(Driver::class);
+        return $this->hasMany(Recruiter::class);
     }
 }

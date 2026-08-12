@@ -28,6 +28,14 @@ class JobOffer extends Model
     use HasFactory, HasUuids;
 
     /**
+     * Computed from the recruiter's subscription status — see getIsFeaturedAttribute().
+     * Requires the `recruiter` relation to be eager-loaded with `subscription_expires_at`.
+     *
+     * @var list<string>
+     */
+    protected $appends = ['is_featured'];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
@@ -50,5 +58,16 @@ class JobOffer extends Model
     public function applications(): HasMany
     {
         return $this->hasMany(JobApplication::class);
+    }
+
+    /**
+     * Offers from a recruiter with an active subscription are boosted/featured
+     * on the public job board (JobOfferController::index() sorts on this).
+     */
+    public function getIsFeaturedAttribute(): bool
+    {
+        return $this->relationLoaded('recruiter') && $this->recruiter
+            ? $this->recruiter->hasActiveSubscription()
+            : false;
     }
 }

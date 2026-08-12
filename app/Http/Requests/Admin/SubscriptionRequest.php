@@ -24,7 +24,7 @@ class SubscriptionRequest extends FormRequest
             'price' => [$required, 'numeric', 'min:0'],
             'duration_days' => [$required, 'integer', 'min:1'],
             'features' => ['nullable', 'string'],
-            'subscriber_type' => [$required, Rule::in(['vendor', 'driver'])],
+            'subscriber_type' => [$required, Rule::in(['property_owner', 'recruiter'])],
         ];
     }
 }

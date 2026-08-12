@@ -17,7 +17,7 @@ class AdminSubscriptionController extends Controller
     public function index(Request $request): JsonResponse
     {
         $plans = Subscription::query()
-            ->withCount(['vendors', 'drivers'])
+            ->withCount(['propertyOwners', 'recruiters'])
             ->when($request->filled('subscriber_type'), fn ($q) => $q->where('subscriber_type', $request->string('subscriber_type')))
             ->latest()
             ->get();
@@ -31,7 +31,7 @@ class AdminSubscriptionController extends Controller
     public function show(string $subscription): JsonResponse
     {
         $found = Subscription::query()
-            ->withCount(['vendors', 'drivers'])
+            ->withCount(['propertyOwners', 'recruiters'])
             ->find($subscription);
 
         if (! $found) {
@@ -68,18 +68,18 @@ class AdminSubscriptionController extends Controller
     }
 
     /**
-     * Delete a plan. Blocked while vendors or drivers still reference it (409),
-     * so subscribers must be reassigned first.
+     * Delete a plan. Blocked while property owners or recruiters still
+     * reference it (409), so subscribers must be reassigned first.
      */
     public function destroy(string $subscription): JsonResponse
     {
-        $found = Subscription::withCount(['vendors', 'drivers'])->find($subscription);
+        $found = Subscription::withCount(['propertyOwners', 'recruiters'])->find($subscription);
 
         if (! $found) {
             return response()->json(['message' => 'Abonnement introuvable.'], 404);
         }
 
-        if ($found->vendors_count > 0 || $found->drivers_count > 0) {
+        if ($found->property_owners_count > 0 || $found->recruiters_count > 0) {
             return response()->json([
                 'message' => 'Ce plan est encore utilisé par des abonnés.',
             ], 409);

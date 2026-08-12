@@ -35,9 +35,20 @@ class BusinessProfileTest extends TestCase
         ])->assertCreated()->assertJsonPath('user_id', $user->id);
     }
 
-    public function test_a_non_vendor_account_cannot_create_a_vendor_profile(): void
+    public function test_a_standard_client_account_can_add_a_vendor_profile(): void
     {
-        Sanctum::actingAs(User::factory()->type('client')->create());
+        $user = User::factory()->type('client')->create();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/vendor', ['shop_name' => 'Chez Ama'])
+            ->assertCreated()
+            ->assertJsonPath('shop_name', 'Chez Ama')
+            ->assertJsonPath('user_id', $user->id);
+    }
+
+    public function test_an_admin_account_cannot_create_a_vendor_profile(): void
+    {
+        Sanctum::actingAs(User::factory()->type('admin')->create());
 
         $this->postJson('/api/vendor', ['shop_name' => 'Chez Ama'])->assertForbidden();
     }

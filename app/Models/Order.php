@@ -15,6 +15,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'customer_id',
     'status',
     'total_amount',
+    'delivery_fee',
+    'commission_amount',
+    'vendor_net_amount',
+    'wallet_settled_at',
     'delivery_address',
     'delivery_latitude',
     'delivery_longitude',
@@ -30,6 +34,10 @@ class Order extends Model
     {
         return [
             'total_amount' => 'decimal:2',
+            'delivery_fee' => 'decimal:2',
+            'commission_amount' => 'decimal:2',
+            'vendor_net_amount' => 'decimal:2',
+            'wallet_settled_at' => 'datetime',
             'delivery_latitude' => 'decimal:7',
             'delivery_longitude' => 'decimal:7',
         ];

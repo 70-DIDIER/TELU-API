@@ -27,7 +27,11 @@ class PropertyFactory extends Factory
             'price' => fake()->randomFloat(2, 5000, 500000),
             'price_unit' => fake()->randomElement(['night', 'month']),
             'bedrooms' => fake()->numberBetween(1, 5),
-            'image_urls' => null,
+            // 3 images Lorem Picsum, séparées par virgule (format attendu par le
+            // mobile : image_urls.split(',') pour la galerie du détail du bien).
+            'image_urls' => collect(range(1, 3))
+                ->map(fn () => 'https://picsum.photos/seed/'.fake()->uuid().'/900/600')
+                ->implode(','),
             'is_available' => fake()->boolean(80),
         ];
     }

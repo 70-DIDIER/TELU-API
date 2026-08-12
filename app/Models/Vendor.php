@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\HasWallet;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -11,7 +12,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'user_id',
-    'subscription_id',
     'shop_name',
     'description',
     'address',
@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class Vendor extends Model
 {
-    use HasFactory, HasUuids;
+    use HasFactory, HasUuids, HasWallet;
 
     /**
      * @return array<string, string>
@@ -38,11 +38,6 @@ class Vendor extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
-    }
-
-    public function subscription(): BelongsTo
-    {
-        return $this->belongsTo(Subscription::class);
     }
 
     public function products(): HasMany

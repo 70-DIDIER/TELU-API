@@ -22,6 +22,15 @@ class PayGate
         'tmoney' => 'TMONEY',
     ];
 
+    /**
+     * Détail du dernier échec de `post()` (message d'erreur brut renvoyé par
+     * PayGate, ou message d'exception réseau) — évite de renvoyer un
+     * "injoignable" générique quand la vraie cause est connue (ex : payload
+     * invalide) et donc masquer un bug de notre côté derrière une fausse
+     * panne réseau.
+     */
+    private ?string $lastError = null;
+
     /** Codes d'état renvoyés par /api/v1/pay. */
     private const PAY_ERRORS = [
         2 => "Jeton d'authentification PayGate invalide.",
@@ -59,13 +68,16 @@ class PayGate
      */
     public function requestPayment(
         string $phoneNumber,
-        float $amount,
+        int $amount,
         string $identifier,
         string $paymentMethod,
         ?string $description = null,
     ): array {
         $response = $this->post('/api/v1/pay', [
             'phone_number' => $phoneNumber,
+            // PayGate exige un montant entier (le XOF n'a pas de sous-unité) : un
+            // float PHP même "rond" (5000.0) se sérialise en JSON avec un point
+            // décimal et se fait rejeter en 400 ("no decimals").
             'amount' => $amount,
             'identifier' => $identifier,
             'network' => self::network($paymentMethod),
@@ -73,7 +85,7 @@ class PayGate
         ]);
 
         if ($response === null) {
-            return ['ok' => false, 'message' => 'Le service de paiement est injoignable.'];
+            return ['ok' => false, 'message' => $this->lastError ?? 'Le service de paiement est injoignable.'];
         }
 
         $status = isset($response['status']) ? (int) $response['status'] : null;
@@ -101,7 +113,7 @@ class PayGate
     /**
      * Lien de la page de paiement hébergée (méthode 2), en repli si le push échoue.
      */
-    public function paymentPageUrl(float $amount, string $identifier, ?string $description = null, ?string $phone = null): string
+    public function paymentPageUrl(int $amount, string $identifier, ?string $description = null, ?string $phone = null): string
     {
         $query = array_filter([
             'token' => $this->apiKey(),
@@ -145,7 +157,7 @@ class PayGate
         $response = $this->post('/api/v1/check-balance');
 
         if ($response === null) {
-            return ['ok' => false, 'message' => 'Le service de paiement est injoignable.'];
+            return ['ok' => false, 'message' => $this->lastError ?? 'Le service de paiement est injoignable.'];
         }
 
         return [
@@ -164,7 +176,7 @@ class PayGate
         $response = $this->post($path, $payload);
 
         if ($response === null) {
-            return ['ok' => false, 'message' => 'Le service de paiement est injoignable.'];
+            return ['ok' => false, 'message' => $this->lastError ?? 'Le service de paiement est injoignable.'];
         }
 
         $status = isset($response['status']) ? (int) $response['status'] : null;
@@ -188,6 +200,8 @@ class PayGate
      */
     private function post(string $path, array $payload = []): ?array
     {
+        $this->lastError = null;
+
         try {
             $response = $this->client()->post($path, array_filter(
                 ['auth_token' => $this->apiKey()] + $payload,
@@ -195,6 +209,7 @@ class PayGate
             ));
         } catch (\Throwable $e) {
             Log::error('PayGate: appel HTTP en échec', ['path' => $path, 'error' => $e->getMessage()]);
+            $this->lastError = 'Le service de paiement est injoignable.';
 
             return null;
         }
@@ -205,6 +220,14 @@ class PayGate
                 'http_status' => $response->status(),
                 'body' => $response->body(),
             ]);
+
+            // PayGate renvoie parfois du texte brut (pas du JSON) sur les erreurs
+            // 4xx de payload — on le remonte tel quel plutôt que de masquer un
+            // vrai bug applicatif derrière un faux message "injoignable".
+            $json = $response->json();
+            $this->lastError = is_array($json) && isset($json['message'])
+                ? (string) $json['message']
+                : ($response->body() !== '' ? trim($response->body()) : 'Le service de paiement est injoignable.');
 
             return null;
         }

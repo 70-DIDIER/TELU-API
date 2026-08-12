@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\JobOfferRequest;
 use App\Models\Recruiter;
+use App\Models\Setting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -35,6 +36,16 @@ class RecruiterJobOfferController extends Controller
 
         if (! $recruiter instanceof Recruiter) {
             return $recruiter;
+        }
+
+        if (! $recruiter->hasActiveSubscription()) {
+            $quota = (int) Setting::get('job_offer_free_quota', 3);
+
+            if ($recruiter->jobOffers()->count() >= $quota) {
+                return response()->json([
+                    'message' => "Quota gratuit atteint ({$quota} offres). Souscrivez à un abonnement pour publier sans limite et être mis en avant.",
+                ], 403);
+            }
         }
 
         $offer = $recruiter->jobOffers()->create($request->validated());

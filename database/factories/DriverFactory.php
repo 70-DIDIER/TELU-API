@@ -18,7 +18,6 @@ class DriverFactory extends Factory
     {
         return [
             'user_id' => User::factory()->type('driver'),
-            'subscription_id' => null,
             'vehicle_type' => fake()->randomElement(['moto', 'tricycle', 'car', 'van']),
             'license_number' => fake()->optional()->bothify('??-####'),
             'coverage_zone' => fake()->optional()->city(),

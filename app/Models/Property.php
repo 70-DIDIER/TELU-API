@@ -28,6 +28,14 @@ class Property extends Model
     use HasFactory, HasUuids;
 
     /**
+     * Computed from the owner's subscription status — see getIsFeaturedAttribute().
+     * Requires the `owner` relation to be eager-loaded with `subscription_expires_at`.
+     *
+     * @var list<string>
+     */
+    protected $appends = ['is_featured'];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
@@ -49,5 +57,16 @@ class Property extends Model
     public function reservations(): HasMany
     {
         return $this->hasMany(Reservation::class);
+    }
+
+    /**
+     * Listings from an owner with an active subscription are boosted/featured
+     * in the public catalogue (PropertyController::index() sorts on this).
+     */
+    public function getIsFeaturedAttribute(): bool
+    {
+        return $this->relationLoaded('owner') && $this->owner
+            ? $this->owner->hasActiveSubscription()
+            : false;
     }
 }

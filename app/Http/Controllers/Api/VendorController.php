@@ -31,9 +31,11 @@ class VendorController extends Controller
     {
         $user = $request->user();
 
-        if ($user->user_type !== 'vendor') {
+        // Le compte client est standard : n'importe quel compte non-admin peut
+        // compléter son compte d'un profil vendeur (cumul de profils autorisé).
+        if ($user->user_type === 'admin') {
             return response()->json([
-                'message' => 'Seul un compte de type vendeur peut créer un profil vendeur.',
+                'message' => 'Un compte administrateur ne peut pas créer de profil vendeur.',
             ], 403);
         }
 

@@ -16,7 +16,7 @@ class AdminPropertyOwnerController extends Controller
     public function index(Request $request): JsonResponse
     {
         $owners = PropertyOwner::query()
-            ->with('user:id,full_name,phone,email,status')
+            ->with(['user:id,full_name,phone,email,status', 'subscription:id,name'])
             ->withCount(['properties', 'reservations'])
             ->when($request->filled('owner_type'), fn ($q) => $q->where('owner_type', $request->string('owner_type')))
             ->when($request->filled('search'), fn ($q) => $q->where('company_name', 'like', '%'.$request->string('search').'%'))
@@ -32,7 +32,7 @@ class AdminPropertyOwnerController extends Controller
     public function show(string $owner): JsonResponse
     {
         $found = PropertyOwner::query()
-            ->with('user:id,full_name,phone,email,status')
+            ->with(['user:id,full_name,phone,email,status', 'subscription:id,name'])
             ->withCount(['properties', 'reservations'])
             ->find($owner);
 

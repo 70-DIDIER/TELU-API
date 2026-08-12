@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\HasSubscription;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -14,10 +15,24 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
     'user_id',
     'company_name',
     'industry',
+    'subscription_id',
+    'subscription_started_at',
+    'subscription_expires_at',
 ])]
 class Recruiter extends Model
 {
-    use HasFactory, HasUuids;
+    use HasFactory, HasSubscription, HasUuids;
+
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'subscription_started_at' => 'datetime',
+            'subscription_expires_at' => 'datetime',
+        ];
+    }
 
     public function user(): BelongsTo
     {

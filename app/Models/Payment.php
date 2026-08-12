@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'payment_reference',
     'phone_number',
     'paid_at',
+    'paygate_fee_amount',
 ])]
 class Payment extends Model
 {
@@ -33,6 +34,7 @@ class Payment extends Model
         return [
             'amount' => 'decimal:2',
             'paid_at' => 'datetime',
+            'paygate_fee_amount' => 'decimal:2',
         ];
     }
 

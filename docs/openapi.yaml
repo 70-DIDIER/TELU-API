@@ -1,0 +1,1971 @@
+openapi: 3.1.0
+
+info:
+  title: TELU BAOBAB API
+  version: "1.0.0"
+  description: |
+    API REST du backend **TELU BAOBAB** — super-app multi-services ciblant le Togo.
+    Une seule table `users` sert trois marketplaces, distingués par `users.user_type` :
+
+    - **Commerce & livraison** — vendeurs → produits → commandes → livraisons (livreurs).
+    - **Immobilier** — propriétaires → biens → réservations.
+    - **Emplois** — recruteurs → offres, et chercheurs d'emploi → candidatures.
+
+    Transverses : abonnements, paiements (mobile money via PayGate), OTP SMS (AfrikSMS),
+    messagerie, notifications, notes/avis, portefeuilles & retraits, back-office admin.
+
+    ## Authentification
+    Jetons **Laravel Sanctum** (Bearer). Récupérez un jeton via `POST /api/auth/register`
+    ou `POST /api/auth/login`, puis envoyez-le dans l'en-tête `Authorization: Bearer <token>`.
+    Les routes publiques (auth, OTP, mot de passe oublié, catalogue, webhook PayGate) ne
+    requièrent pas de jeton.
+
+    ## Conventions
+    - Toutes les clés primaires sont des **UUID**.
+    - Les montants sont en **XOF (FCFA)**, sans sous-unité.
+    - Codes d'erreur métier récurrents : **403** (mauvais profil / non-propriétaire),
+      **404** (introuvable ou non accessible), **409** (conflit / doublon),
+      **422** (validation ou transition d'état interdite), **502** (passerelle PayGate injoignable).
+    - Les erreurs `api/*` sont toujours rendues en JSON.
+
+servers:
+  - url: http://localhost:8000
+    description: Développement local (php artisan serve)
+  - url: https://api.telu.tg
+    description: Production (exemple)
+
+tags:
+  - name: Auth
+    description: Inscription, connexion, profil du compte, déconnexion.
+  - name: OTP & Mot de passe
+    description: Vérification du numéro par SMS et réinitialisation du mot de passe.
+  - name: Profils métier
+    description: Profil unique de l'utilisateur selon son user_type (vendeur, livreur, propriétaire, recruteur, chercheur d'emploi).
+  - name: Commerce - Catalogue
+    description: Catalogue public de produits et gestion côté vendeur.
+  - name: Commerce - Commandes
+    description: Cycle de vie commande → livraison → confirmation.
+  - name: Commerce - Livraisons
+    description: Pool de livraisons et actions du livreur.
+  - name: Immobilier - Biens
+    description: Catalogue public de biens et gestion côté propriétaire.
+  - name: Immobilier - Réservations
+    description: Réservations côté client et côté propriétaire.
+  - name: Emplois - Offres
+    description: Job board public et gestion côté recruteur.
+  - name: Emplois - Candidatures
+    description: Candidatures côté chercheur d'emploi et côté recruteur.
+  - name: Emplois - Annuaire
+    description: Annuaire public des chercheurs d'emploi (sourcing).
+  - name: Paiements
+    description: Paiements mobile money (Flooz / TMoney) via PayGate Global.
+  - name: Abonnements
+    description: Catalogue des plans d'abonnement.
+  - name: Portefeuilles & Retraits
+    description: Portefeuille de commission des vendeurs/livreurs et demandes de retrait.
+  - name: Adresses
+    description: Carnet d'adresses de livraison de l'utilisateur.
+  - name: Messagerie
+    description: Chat direct 1-à-1.
+  - name: Notifications
+    description: Notifications applicatives de l'utilisateur.
+  - name: Notes & Avis
+    description: Notation des profils métier (1–5).
+  - name: Admin - Utilisateurs & Stats
+    description: Back-office (user_type = admin uniquement).
+  - name: Admin - Catalogues
+    description: Supervision commerce / immobilier / emplois.
+  - name: Admin - Finance
+    description: Abonnements, réglages, retraits.
+
+security:
+  - bearerAuth: []
+
+paths:
+
+  # ============================================================ AUTH
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: Inscription
+      description: Crée un compte et retourne un jeton Sanctum. `otp_token` devient requis si `OTP_REQUIRED_FOR_REGISTRATION=true`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: Compte créé.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokenResponse' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Connexion
+      description: Le champ `login` est auto-détecté comme email ou téléphone.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Connecté.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokenResponse' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: Profil du compte authentifié
+      responses:
+        '200':
+          description: Utilisateur courant.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [Auth]
+      summary: Mise à jour du profil du compte
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMeRequest' }
+      responses:
+        '200':
+          description: Profil mis à jour.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Déconnexion (révoque le jeton courant)
+      responses:
+        '200': { description: Déconnecté. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ============================================================ OTP & PASSWORD
+  /api/auth/otp/send:
+    post:
+      tags: [OTP & Mot de passe]
+      summary: Envoi d'un code OTP (inscription, numéro sans compte)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PhoneRequest' }
+      responses:
+        '200': { description: Code envoyé (jamais renvoyé dans la réponse). }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+        '502': { $ref: '#/components/responses/GatewayError' }
+
+  /api/auth/otp/verify:
+    post:
+      tags: [OTP & Mot de passe]
+      summary: Vérification du code OTP (inscription)
+      description: Retourne un `verification_token` à usage unique (valide 30 min) à passer à `POST /api/auth/register`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyOtpRequest' }
+      responses:
+        '200':
+          description: Code vérifié.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_token: { type: string }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/auth/password/forgot:
+    post:
+      tags: [OTP & Mot de passe]
+      summary: Mot de passe oublié — envoi du code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PhoneRequest' }
+      responses:
+        '200': { description: Code envoyé si un compte existe. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/auth/password/verify:
+    post:
+      tags: [OTP & Mot de passe]
+      summary: Mot de passe oublié — vérification du code
+      description: Retourne un `reset_token` à usage unique.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyOtpRequest' }
+      responses:
+        '200':
+          description: Code vérifié.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reset_token: { type: string }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/auth/password/reset:
+    post:
+      tags: [OTP & Mot de passe]
+      summary: Mot de passe oublié — réinitialisation
+      description: Réinitialise le mot de passe et révoque tous les jetons Sanctum de l'utilisateur.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '200': { description: Mot de passe réinitialisé. }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/otp/send:
+    post:
+      tags: [OTP & Mot de passe]
+      summary: Envoi OTP pour le numéro déjà lié au compte (authentifié)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PhoneRequest' }
+      responses:
+        '200': { description: Code envoyé. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/otp/verify:
+    post:
+      tags: [OTP & Mot de passe]
+      summary: Vérification OTP du numéro du compte (authentifié)
+      description: Marque le numéro comme vérifié (`is_verified`, `phone_verified_at`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VerifyOtpRequest' }
+      responses:
+        '200': { description: Numéro vérifié. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ============================================================ PROFILS MÉTIER
+  /api/vendor:
+    get:
+      tags: [Profils métier]
+      summary: Mon profil vendeur
+      responses:
+        '200': { description: Profil vendeur., content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Profils métier]
+      summary: Créer mon profil vendeur
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/VendorProfileRequest' } } } }
+      responses:
+        '201': { description: Créé., content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    put:
+      tags: [Profils métier]
+      summary: Mettre à jour mon profil vendeur
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/VendorProfileRequest' } } } }
+      responses:
+        '200': { description: Mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/driver:
+    get:
+      tags: [Profils métier]
+      summary: Mon profil livreur
+      responses:
+        '200': { description: Profil livreur., content: { application/json: { schema: { $ref: '#/components/schemas/Driver' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Profils métier]
+      summary: Créer mon profil livreur
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DriverProfileRequest' } } } }
+      responses:
+        '201': { description: Créé., content: { application/json: { schema: { $ref: '#/components/schemas/Driver' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    put:
+      tags: [Profils métier]
+      summary: Mettre à jour mon profil livreur
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DriverProfileRequest' } } } }
+      responses:
+        '200': { description: Mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Driver' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/property-owner:
+    get:
+      tags: [Profils métier]
+      summary: Mon profil propriétaire
+      responses:
+        '200': { description: Profil propriétaire., content: { application/json: { schema: { $ref: '#/components/schemas/PropertyOwner' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Profils métier]
+      summary: Créer mon profil propriétaire
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PropertyOwnerProfileRequest' } } } }
+      responses:
+        '201': { description: Créé., content: { application/json: { schema: { $ref: '#/components/schemas/PropertyOwner' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    put:
+      tags: [Profils métier]
+      summary: Mettre à jour mon profil propriétaire
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PropertyOwnerProfileRequest' } } } }
+      responses:
+        '200': { description: Mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/PropertyOwner' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/recruiter:
+    get:
+      tags: [Profils métier]
+      summary: Mon profil recruteur
+      responses:
+        '200': { description: Profil recruteur., content: { application/json: { schema: { $ref: '#/components/schemas/Recruiter' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Profils métier]
+      summary: Créer mon profil recruteur
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecruiterProfileRequest' } } } }
+      responses:
+        '201': { description: Créé., content: { application/json: { schema: { $ref: '#/components/schemas/Recruiter' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    put:
+      tags: [Profils métier]
+      summary: Mettre à jour mon profil recruteur
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecruiterProfileRequest' } } } }
+      responses:
+        '200': { description: Mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Recruiter' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/job-seeker:
+    get:
+      tags: [Profils métier]
+      summary: Mon profil chercheur d'emploi
+      responses:
+        '200': { description: Profil chercheur d'emploi., content: { application/json: { schema: { $ref: '#/components/schemas/JobSeeker' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Profils métier]
+      summary: Créer mon profil chercheur d'emploi
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JobSeekerProfileRequest' } } } }
+      responses:
+        '201': { description: Créé., content: { application/json: { schema: { $ref: '#/components/schemas/JobSeeker' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    put:
+      tags: [Profils métier]
+      summary: Mettre à jour mon profil chercheur d'emploi
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JobSeekerProfileRequest' } } } }
+      responses:
+        '200': { description: Mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/JobSeeker' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============================================================ COMMERCE - CATALOGUE
+  /api/products:
+    get:
+      tags: [Commerce - Catalogue]
+      summary: Catalogue public de produits
+      description: Retourne uniquement les produits `is_available`.
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: vendor_id, in: query, schema: { type: string, format: uuid } }
+        - { name: min_price, in: query, schema: { type: number } }
+        - { name: max_price, in: query, schema: { type: number } }
+        - { $ref: '#/components/parameters/Page' }
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+
+  /api/products/{product}:
+    get:
+      tags: [Commerce - Catalogue]
+      summary: Détail d'un produit
+      parameters: [ { $ref: '#/components/parameters/ProductId' } ]
+      responses:
+        '200': { description: Produit., content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/vendor/products:
+    get:
+      tags: [Commerce - Catalogue]
+      summary: Mes produits (vendeur)
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Commerce - Catalogue]
+      summary: Créer un produit (vendeur)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProductRequest' } } } }
+      responses:
+        '201': { description: Créé., content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/vendor/products/{product}:
+    get:
+      tags: [Commerce - Catalogue]
+      summary: Détail d'un de mes produits (vendeur)
+      parameters: [ { $ref: '#/components/parameters/ProductId' } ]
+      responses:
+        '200': { description: Produit., content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Commerce - Catalogue]
+      summary: Mettre à jour un de mes produits (vendeur)
+      parameters: [ { $ref: '#/components/parameters/ProductId' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProductRequest' } } } }
+      responses:
+        '200': { description: Mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Commerce - Catalogue]
+      summary: Supprimer un de mes produits (vendeur)
+      parameters: [ { $ref: '#/components/parameters/ProductId' } ]
+      responses:
+        '200': { description: Supprimé. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============================================================ COMMERCE - COMMANDES
+  /api/orders:
+    get:
+      tags: [Commerce - Commandes]
+      summary: Mes commandes (client)
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+    post:
+      tags: [Commerce - Commandes]
+      summary: Passer une commande (client)
+      description: Total calculé côté serveur. Tous les articles doivent appartenir au même vendeur, être disponibles et en stock.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StoreOrderRequest' } } } }
+      responses:
+        '201': { description: Commande créée., content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/orders/{order}:
+    get:
+      tags: [Commerce - Commandes]
+      summary: Détail d'une de mes commandes (client)
+      parameters: [ { $ref: '#/components/parameters/OrderId' } ]
+      responses:
+        '200': { description: Commande., content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/orders/{order}/confirm-receipt:
+    post:
+      tags: [Commerce - Commandes]
+      summary: Confirmer la réception (client)
+      description: Autorisé uniquement quand la commande est `in_delivery`. Clôture commande et livraison en `delivered` et déclenche le règlement des portefeuilles.
+      parameters: [ { $ref: '#/components/parameters/OrderId' } ]
+      responses:
+        '200': { description: Réception confirmée., content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableState' }
+
+  /api/vendor/orders:
+    get:
+      tags: [Commerce - Commandes]
+      summary: Commandes reçues (vendeur)
+      parameters: [ { $ref: '#/components/parameters/StatusFilter' } ]
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/vendor/orders/{order}:
+    get:
+      tags: [Commerce - Commandes]
+      summary: Détail d'une commande reçue (vendeur)
+      parameters: [ { $ref: '#/components/parameters/OrderId' } ]
+      responses:
+        '200': { description: Commande., content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/vendor/orders/{order}/status:
+    patch:
+      tags: [Commerce - Commandes]
+      summary: Changer le statut d'une commande (vendeur)
+      description: |
+        Transitions autorisées : `pending→accepted|cancelled`, `accepted→preparing|cancelled`,
+        `preparing→cancelled`. À l'acceptation : déduction du stock + création de la livraison.
+      parameters: [ { $ref: '#/components/parameters/OrderId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [accepted, preparing, cancelled] }
+      responses:
+        '200': { description: Statut mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableState' }
+
+  # ============================================================ COMMERCE - LIVRAISONS
+  /api/driver/deliveries/available:
+    get:
+      tags: [Commerce - Livraisons]
+      summary: Pool des livraisons disponibles (livreur)
+      responses:
+        '200': { description: Livraisons `awaiting_driver`., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/driver/deliveries:
+    get:
+      tags: [Commerce - Livraisons]
+      summary: Mes livraisons (livreur)
+      parameters: [ { $ref: '#/components/parameters/StatusFilter' } ]
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/driver/deliveries/{delivery}/claim:
+    post:
+      tags: [Commerce - Livraisons]
+      summary: Prendre une livraison (livreur)
+      description: Concurrence sûre (`lockForUpdate`) — le premier livreur gagne, les autres reçoivent 422.
+      parameters: [ { $ref: '#/components/parameters/DeliveryId' } ]
+      responses:
+        '200': { description: Livraison assignée., content: { application/json: { schema: { $ref: '#/components/schemas/Delivery' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableState' }
+
+  /api/driver/deliveries/{delivery}/pickup:
+    post:
+      tags: [Commerce - Livraisons]
+      summary: Marquer récupérée (livreur)
+      description: '`assigned`→`picked_up` ; passe la commande en `in_delivery`.'
+      parameters: [ { $ref: '#/components/parameters/DeliveryId' } ]
+      responses:
+        '200': { description: Récupérée., content: { application/json: { schema: { $ref: '#/components/schemas/Delivery' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableState' }
+
+  # ============================================================ IMMOBILIER - BIENS
+  /api/properties:
+    get:
+      tags: [Immobilier - Biens]
+      summary: Catalogue public de biens
+      description: Retourne uniquement les biens `is_available`.
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: property_type, in: query, schema: { type: string, enum: [room, studio, apartment, house, hotel_room] } }
+        - { name: price_unit, in: query, schema: { type: string, enum: [night, month] } }
+        - { name: owner_id, in: query, schema: { type: string, format: uuid } }
+        - { name: min_price, in: query, schema: { type: number } }
+        - { name: max_price, in: query, schema: { type: number } }
+        - { name: bedrooms, in: query, schema: { type: integer } }
+        - { $ref: '#/components/parameters/Page' }
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+
+  /api/properties/{property}:
+    get:
+      tags: [Immobilier - Biens]
+      summary: Détail d'un bien
+      parameters: [ { $ref: '#/components/parameters/PropertyId' } ]
+      responses:
+        '200': { description: Bien., content: { application/json: { schema: { $ref: '#/components/schemas/Property' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/property-owner/properties:
+    get:
+      tags: [Immobilier - Biens]
+      summary: Mes biens (propriétaire)
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Immobilier - Biens]
+      summary: Publier un bien (propriétaire)
+      description: Sans abonnement actif, limité au quota gratuit (`property_free_quota`, défaut 3) → 403 au-delà.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PropertyRequest' } } } }
+      responses:
+        '201': { description: Créé., content: { application/json: { schema: { $ref: '#/components/schemas/Property' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/property-owner/properties/{property}:
+    get:
+      tags: [Immobilier - Biens]
+      summary: Détail d'un de mes biens (propriétaire)
+      parameters: [ { $ref: '#/components/parameters/PropertyId' } ]
+      responses:
+        '200': { description: Bien., content: { application/json: { schema: { $ref: '#/components/schemas/Property' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Immobilier - Biens]
+      summary: Mettre à jour un de mes biens (propriétaire)
+      parameters: [ { $ref: '#/components/parameters/PropertyId' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/PropertyRequest' } } } }
+      responses:
+        '200': { description: Mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Property' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Immobilier - Biens]
+      summary: Supprimer un de mes biens (propriétaire)
+      parameters: [ { $ref: '#/components/parameters/PropertyId' } ]
+      responses:
+        '200': { description: Supprimé. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============================================================ IMMOBILIER - RÉSERVATIONS
+  /api/reservations:
+    get:
+      tags: [Immobilier - Réservations]
+      summary: Mes réservations (client)
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+    post:
+      tags: [Immobilier - Réservations]
+      summary: Réserver un bien (client)
+      description: '`total_price` calculé côté serveur. Refuse le chevauchement d''une réservation active (intervalles semi-ouverts).'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StoreReservationRequest' } } } }
+      responses:
+        '201': { description: Réservation créée., content: { application/json: { schema: { $ref: '#/components/schemas/Reservation' } } } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/reservations/{reservation}:
+    get:
+      tags: [Immobilier - Réservations]
+      summary: Détail d'une de mes réservations (client)
+      parameters: [ { $ref: '#/components/parameters/ReservationId' } ]
+      responses:
+        '200': { description: Réservation., content: { application/json: { schema: { $ref: '#/components/schemas/Reservation' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/reservations/{reservation}/cancel:
+    post:
+      tags: [Immobilier - Réservations]
+      summary: Annuler une réservation (client)
+      description: Autorisé uniquement depuis `pending|confirmed`.
+      parameters: [ { $ref: '#/components/parameters/ReservationId' } ]
+      responses:
+        '200': { description: Annulée., content: { application/json: { schema: { $ref: '#/components/schemas/Reservation' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableState' }
+
+  /api/property-owner/reservations:
+    get:
+      tags: [Immobilier - Réservations]
+      summary: Réservations reçues (propriétaire)
+      parameters: [ { $ref: '#/components/parameters/StatusFilter' } ]
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/property-owner/reservations/{reservation}/status:
+    patch:
+      tags: [Immobilier - Réservations]
+      summary: Changer le statut d'une réservation (propriétaire)
+      description: 'Transitions : `pending→confirmed|cancelled`, `confirmed→completed|cancelled`.'
+      parameters: [ { $ref: '#/components/parameters/ReservationId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [confirmed, cancelled, completed] }
+      responses:
+        '200': { description: Statut mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Reservation' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableState' }
+
+  # ============================================================ EMPLOIS - OFFRES
+  /api/job-offers:
+    get:
+      tags: [Emplois - Offres]
+      summary: Job board public
+      description: Retourne uniquement les offres `is_active`.
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: location, in: query, schema: { type: string } }
+        - { name: recruiter_id, in: query, schema: { type: string, format: uuid } }
+        - { name: min_rate, in: query, schema: { type: number } }
+        - { name: max_rate, in: query, schema: { type: number } }
+        - { $ref: '#/components/parameters/Page' }
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+
+  /api/job-offers/{jobOffer}:
+    get:
+      tags: [Emplois - Offres]
+      summary: Détail d'une offre
+      parameters: [ { $ref: '#/components/parameters/JobOfferId' } ]
+      responses:
+        '200': { description: Offre., content: { application/json: { schema: { $ref: '#/components/schemas/JobOffer' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/recruiter/job-offers:
+    get:
+      tags: [Emplois - Offres]
+      summary: Mes offres (recruteur)
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Emplois - Offres]
+      summary: Publier une offre (recruteur)
+      description: Sans abonnement actif, limité au quota gratuit (`job_offer_free_quota`, défaut 3) → 403 au-delà.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JobOfferRequest' } } } }
+      responses:
+        '201': { description: Créée., content: { application/json: { schema: { $ref: '#/components/schemas/JobOffer' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/recruiter/job-offers/{jobOffer}:
+    get:
+      tags: [Emplois - Offres]
+      summary: Détail d'une de mes offres (recruteur)
+      parameters: [ { $ref: '#/components/parameters/JobOfferId' } ]
+      responses:
+        '200': { description: Offre., content: { application/json: { schema: { $ref: '#/components/schemas/JobOffer' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Emplois - Offres]
+      summary: Mettre à jour une de mes offres (recruteur)
+      parameters: [ { $ref: '#/components/parameters/JobOfferId' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JobOfferRequest' } } } }
+      responses:
+        '200': { description: Mise à jour., content: { application/json: { schema: { $ref: '#/components/schemas/JobOffer' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Emplois - Offres]
+      summary: Supprimer une de mes offres (recruteur)
+      parameters: [ { $ref: '#/components/parameters/JobOfferId' } ]
+      responses:
+        '200': { description: Supprimée. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============================================================ EMPLOIS - CANDIDATURES
+  /api/job-offers/{jobOffer}/apply:
+    post:
+      tags: [Emplois - Candidatures]
+      summary: Postuler à une offre (chercheur d'emploi)
+      description: L'offre doit être `is_active` (404 sinon). Doublon → 409.
+      parameters: [ { $ref: '#/components/parameters/JobOfferId' } ]
+      responses:
+        '201': { description: Candidature créée., content: { application/json: { schema: { $ref: '#/components/schemas/JobApplication' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/job-seeker/applications:
+    get:
+      tags: [Emplois - Candidatures]
+      summary: Mes candidatures (chercheur d'emploi)
+      parameters: [ { $ref: '#/components/parameters/StatusFilter' } ]
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/job-seeker/applications/{application}/withdraw:
+    post:
+      tags: [Emplois - Candidatures]
+      summary: Retirer une candidature (chercheur d'emploi)
+      description: Autorisé uniquement si la candidature est encore `pending` (422 sinon).
+      parameters: [ { $ref: '#/components/parameters/ApplicationId' } ]
+      responses:
+        '200': { description: Retirée. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableState' }
+
+  /api/recruiter/job-offers/{jobOffer}/applications:
+    get:
+      tags: [Emplois - Candidatures]
+      summary: Candidatures reçues sur une offre (recruteur)
+      parameters:
+        - { $ref: '#/components/parameters/JobOfferId' }
+        - { $ref: '#/components/parameters/StatusFilter' }
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/recruiter/applications/{application}/status:
+    patch:
+      tags: [Emplois - Candidatures]
+      summary: Changer le statut d'une candidature (recruteur)
+      description: 'Transitions : `pending→accepted|rejected`, `accepted→completed`.'
+      parameters: [ { $ref: '#/components/parameters/ApplicationId' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [accepted, rejected, completed] }
+      responses:
+        '200': { description: Statut mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/JobApplication' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableState' }
+
+  # ============================================================ EMPLOIS - ANNUAIRE
+  /api/job-seekers:
+    get:
+      tags: [Emplois - Annuaire]
+      summary: Annuaire public des chercheurs d'emploi
+      parameters:
+        - { name: search, in: query, schema: { type: string }, description: 'Recherche sur profession/availability.' }
+        - { name: availability, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Page' }
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+
+  /api/job-seekers/{jobSeeker}:
+    get:
+      tags: [Emplois - Annuaire]
+      summary: Profil public d'un chercheur d'emploi
+      parameters: [ { name: jobSeeker, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses:
+        '200': { description: Profil., content: { application/json: { schema: { $ref: '#/components/schemas/JobSeeker' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============================================================ PAIEMENTS
+  /api/payments:
+    get:
+      tags: [Paiements]
+      summary: Mes paiements
+      parameters:
+        - { $ref: '#/components/parameters/StatusFilter' }
+        - { name: reference_type, in: query, schema: { type: string, enum: [order, reservation, subscription] } }
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+    post:
+      tags: [Paiements]
+      summary: Initier un paiement mobile money
+      description: |
+        Montant résolu **côté serveur** depuis l'entité référencée (jamais le body).
+        Crée un paiement `pending` puis déclenche le push USSD PayGate.
+        Refus passerelle → **502** (paiement marqué `failed`).
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StorePaymentRequest' } } } }
+      responses:
+        '201': { description: Paiement initié., content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502': { $ref: '#/components/responses/GatewayError' }
+
+  /api/payments/{payment}:
+    get:
+      tags: [Paiements]
+      summary: Détail d'un de mes paiements
+      parameters: [ { $ref: '#/components/parameters/PaymentId' } ]
+      responses:
+        '200': { description: Paiement., content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/payments/{payment}/check:
+    post:
+      tags: [Paiements]
+      summary: Rafraîchir le statut auprès de PayGate
+      description: Interroge PayGate pour un paiement encore `pending`.
+      parameters: [ { $ref: '#/components/parameters/PaymentId' } ]
+      responses:
+        '200': { description: Statut à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/GatewayError' }
+
+  /api/payments/callback:
+    post:
+      tags: [Paiements]
+      summary: Webhook PayGate Global (public)
+      description: |
+        Endpoint public, non authentifié, throttlé. Le corps posté n'est pas signé :
+        il sert de simple déclencheur, le statut réel est relu depuis PayGate avant
+        toute écriture. Répond toujours `200 {"received": true}`.
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayGateCallbackRequest' }
+      responses:
+        '200':
+          description: Reçu.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: { type: boolean, example: true }
+
+  # ============================================================ ABONNEMENTS
+  /api/subscriptions:
+    get:
+      tags: [Abonnements]
+      summary: Catalogue des plans d'abonnement
+      parameters:
+        - { name: subscriber_type, in: query, schema: { type: string, enum: [property_owner, recruiter] } }
+      responses:
+        '200': { description: Liste des plans., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Subscription' } } } } }
+
+  # ============================================================ PORTEFEUILLES & RETRAITS
+  /api/vendor/wallet:
+    get:
+      tags: [Portefeuilles & Retraits]
+      summary: Mon portefeuille (vendeur)
+      responses:
+        '200': { description: Portefeuille + transactions., content: { application/json: { schema: { $ref: '#/components/schemas/Wallet' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/driver/wallet:
+    get:
+      tags: [Portefeuilles & Retraits]
+      summary: Mon portefeuille (livreur)
+      responses:
+        '200': { description: Portefeuille + transactions., content: { application/json: { schema: { $ref: '#/components/schemas/Wallet' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/withdrawals:
+    get:
+      tags: [Portefeuilles & Retraits]
+      summary: Mes demandes de retrait (vendeur/livreur)
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Portefeuilles & Retraits]
+      summary: Demander un retrait (vendeur/livreur)
+      description: Le portefeuille est débité immédiatement (fonds réservés). Solde insuffisant → 422.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StoreWithdrawalRequest' } } } }
+      responses:
+        '201': { description: Demande créée., content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalRequest' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/UnprocessableState' }
+
+  # ============================================================ ADRESSES
+  /api/addresses:
+    get:
+      tags: [Adresses]
+      summary: Mon carnet d'adresses
+      responses:
+        '200': { description: Adresses., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Address' } } } } }
+    post:
+      tags: [Adresses]
+      summary: Ajouter une adresse
+      description: La toute première adresse créée est toujours l'adresse par défaut.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddressRequest' } } } }
+      responses:
+        '201': { description: Créée., content: { application/json: { schema: { $ref: '#/components/schemas/Address' } } } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/addresses/{address}:
+    put:
+      tags: [Adresses]
+      summary: Mettre à jour une adresse
+      parameters: [ { $ref: '#/components/parameters/AddressId' } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddressRequest' } } } }
+      responses:
+        '200': { description: Mise à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Address' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Adresses]
+      summary: Supprimer une adresse
+      description: Supprimer l'adresse par défaut promeut la plus récente restante.
+      parameters: [ { $ref: '#/components/parameters/AddressId' } ]
+      responses:
+        '200': { description: Supprimée. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/addresses/{address}/default:
+    patch:
+      tags: [Adresses]
+      summary: Définir comme adresse par défaut
+      parameters: [ { $ref: '#/components/parameters/AddressId' } ]
+      responses:
+        '200': { description: Adresse par défaut mise à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Address' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ============================================================ MESSAGERIE
+  /api/messages:
+    post:
+      tags: [Messagerie]
+      summary: Envoyer un message
+      description: '`receiver_id` doit exister et ne pas être soi-même.'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StoreMessageRequest' } } } }
+      responses:
+        '201': { description: Message envoyé., content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/conversations:
+    get:
+      tags: [Messagerie]
+      summary: Mes conversations
+      description: Une entrée par interlocuteur avec dernier message et nombre de non-lus.
+      responses:
+        '200': { description: Conversations., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Conversation' } } } } }
+
+  /api/messages/{user}:
+    get:
+      tags: [Messagerie]
+      summary: Fil de discussion avec un utilisateur
+      description: Marque comme lus les messages de l'interlocuteur à mon égard. 404 si l'utilisateur n'existe pas.
+      parameters: [ { name: user, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses:
+        '200': { description: Fil., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Message' } } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/messages/unread-count:
+    get:
+      tags: [Messagerie]
+      summary: Nombre de messages non lus
+      responses:
+        '200': { description: Compteur., content: { application/json: { schema: { type: object, properties: { unread_count: { type: integer } } } } } }
+
+  # ============================================================ NOTIFICATIONS
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: Mes notifications
+      parameters:
+        - { name: unread, in: query, schema: { type: boolean }, description: '1 pour ne renvoyer que les non-lues.' }
+        - { name: type, in: query, schema: { type: string }, description: 'Filtre par type (order, delivery, reservation, job, payment, message, rating, subscription, wallet...).' }
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+
+  /api/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Nombre de notifications non lues
+      responses:
+        '200': { description: Compteur., content: { application/json: { schema: { type: object, properties: { unread_count: { type: integer } } } } } }
+
+  /api/notifications/{notification}/read:
+    patch:
+      tags: [Notifications]
+      summary: Marquer une notification comme lue
+      parameters: [ { name: notification, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses:
+        '200': { description: Marquée lue., content: { application/json: { schema: { $ref: '#/components/schemas/Notification' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Tout marquer comme lu
+      responses:
+        '200': { description: Marquées lues., content: { application/json: { schema: { type: object, properties: { marked_read: { type: integer } } } } } }
+
+  # ============================================================ NOTES & AVIS
+  /api/ratings:
+    post:
+      tags: [Notes & Avis]
+      summary: Noter un profil métier
+      description: 'Cible = target_type + target_id. Note 1–5. Auto-note → 422 ; doublon → 409 ; cible inexistante → 404.'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StoreRatingRequest' } } } }
+      responses:
+        '201': { description: Note enregistrée., content: { application/json: { schema: { $ref: '#/components/schemas/Rating' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /api/ratings/{targetType}/{targetId}:
+    get:
+      tags: [Notes & Avis]
+      summary: Notes d'un profil (public) avec moyenne et total
+      parameters:
+        - { name: targetType, in: path, required: true, schema: { type: string, enum: [vendor, driver, property_owner, recruiter, job_seeker] } }
+        - { name: targetId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Notes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  average: { type: number }
+                  count: { type: integer }
+                  ratings: { type: array, items: { $ref: '#/components/schemas/Rating' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/my-ratings:
+    get:
+      tags: [Notes & Avis]
+      summary: Les notes que j'ai laissées
+      responses:
+        '200': { description: Liste., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Rating' } } } } }
+
+  # ============================================================ ADMIN - UTILISATEURS & STATS
+  /api/admin/stats:
+    get:
+      tags: [Admin - Utilisateurs & Stats]
+      summary: KPIs du tableau de bord
+      responses:
+        '200': { description: Indicateurs. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/admin/users:
+    get:
+      tags: [Admin - Utilisateurs & Stats]
+      summary: Liste des utilisateurs
+      parameters:
+        - { name: user_type, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/StatusFilter' }
+        - { name: search, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Page' }
+      responses:
+        '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/admin/users/{user}:
+    get:
+      tags: [Admin - Utilisateurs & Stats]
+      summary: Détail d'un utilisateur
+      parameters: [ { name: user, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses:
+        '200': { description: Utilisateur., content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/admin/users/{user}/status:
+    patch:
+      tags: [Admin - Utilisateurs & Stats]
+      summary: Suspendre / réactiver un utilisateur
+      parameters: [ { name: user, in: path, required: true, schema: { type: string, format: uuid } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, suspended] }
+      responses:
+        '200': { description: Statut mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  # ============================================================ ADMIN - CATALOGUES (lecture)
+  /api/admin/vendors:
+    get: { tags: [Admin - Catalogues], summary: Liste des vendeurs, parameters: [ { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. }, '403': { $ref: '#/components/responses/Forbidden' } } }
+  /api/admin/vendors/{vendor}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'un vendeur
+      parameters: [ { $ref: '#/components/parameters/VendorId' } ]
+      responses: { '200': { description: Vendeur., content: { application/json: { schema: { $ref: '#/components/schemas/Vendor' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/admin/vendors/{vendor}/status:
+    patch:
+      tags: [Admin - Catalogues]
+      summary: Suspendre / réactiver un vendeur
+      parameters: [ { $ref: '#/components/parameters/VendorId' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [status], properties: { status: { type: string, enum: [active, suspended] } } } } } }
+      responses: { '200': { description: Statut mis à jour. }, '404': { $ref: '#/components/responses/NotFound' }, '422': { $ref: '#/components/responses/ValidationError' } }
+
+  /api/admin/products:
+    get: { tags: [Admin - Catalogues], summary: Liste des produits, parameters: [ { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/products/{product}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'un produit
+      parameters: [ { $ref: '#/components/parameters/ProductId' } ]
+      responses: { '200': { description: Produit., content: { application/json: { schema: { $ref: '#/components/schemas/Product' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/admin/products/{product}/availability:
+    patch:
+      tags: [Admin - Catalogues]
+      summary: Modérer la disponibilité d'un produit
+      parameters: [ { $ref: '#/components/parameters/ProductId' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [is_available], properties: { is_available: { type: boolean } } } } } }
+      responses: { '200': { description: Mis à jour. }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/properties:
+    get: { tags: [Admin - Catalogues], summary: Liste des biens, parameters: [ { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/properties/{property}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'un bien
+      parameters: [ { $ref: '#/components/parameters/PropertyId' } ]
+      responses: { '200': { description: Bien., content: { application/json: { schema: { $ref: '#/components/schemas/Property' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/admin/properties/{property}/availability:
+    patch:
+      tags: [Admin - Catalogues]
+      summary: Modérer la disponibilité d'un bien
+      parameters: [ { $ref: '#/components/parameters/PropertyId' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [is_available], properties: { is_available: { type: boolean } } } } } }
+      responses: { '200': { description: Mis à jour. }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/property-owners:
+    get: { tags: [Admin - Catalogues], summary: Liste des propriétaires, parameters: [ { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/property-owners/{owner}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'un propriétaire
+      parameters: [ { name: owner, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Propriétaire. }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/recruiters:
+    get: { tags: [Admin - Catalogues], summary: Liste des recruteurs, parameters: [ { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/recruiters/{recruiter}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'un recruteur
+      parameters: [ { name: recruiter, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Recruteur. }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/job-seekers:
+    get: { tags: [Admin - Catalogues], summary: Liste des chercheurs d'emploi, parameters: [ { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/job-seekers/{seeker}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'un chercheur d'emploi
+      parameters: [ { name: seeker, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Chercheur d'emploi. }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/job-offers:
+    get: { tags: [Admin - Catalogues], summary: Liste des offres, parameters: [ { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/job-offers/{jobOffer}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'une offre
+      parameters: [ { $ref: '#/components/parameters/JobOfferId' } ]
+      responses: { '200': { description: Offre., content: { application/json: { schema: { $ref: '#/components/schemas/JobOffer' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/admin/job-offers/{jobOffer}/status:
+    patch:
+      tags: [Admin - Catalogues]
+      summary: Modérer une offre (activer/désactiver)
+      parameters: [ { $ref: '#/components/parameters/JobOfferId' } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [is_active], properties: { is_active: { type: boolean } } } } } }
+      responses: { '200': { description: Mis à jour. }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/job-applications:
+    get: { tags: [Admin - Catalogues], summary: Liste des candidatures, parameters: [ { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/job-applications/{application}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'une candidature
+      parameters: [ { $ref: '#/components/parameters/ApplicationId' } ]
+      responses: { '200': { description: Candidature. }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/orders:
+    get: { tags: [Admin - Catalogues], summary: Liste des commandes, parameters: [ { $ref: '#/components/parameters/StatusFilter' }, { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/orders/{order}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'une commande
+      parameters: [ { $ref: '#/components/parameters/OrderId' } ]
+      responses: { '200': { description: Commande., content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/deliveries:
+    get: { tags: [Admin - Catalogues], summary: Liste des livraisons, parameters: [ { $ref: '#/components/parameters/StatusFilter' }, { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/deliveries/{delivery}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'une livraison
+      parameters: [ { $ref: '#/components/parameters/DeliveryId' } ]
+      responses: { '200': { description: Livraison., content: { application/json: { schema: { $ref: '#/components/schemas/Delivery' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/reservations:
+    get: { tags: [Admin - Catalogues], summary: Liste des réservations, parameters: [ { $ref: '#/components/parameters/StatusFilter' }, { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/reservations/{reservation}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'une réservation
+      parameters: [ { $ref: '#/components/parameters/ReservationId' } ]
+      responses: { '200': { description: Réservation., content: { application/json: { schema: { $ref: '#/components/schemas/Reservation' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/payments:
+    get: { tags: [Admin - Catalogues], summary: Liste des paiements, parameters: [ { $ref: '#/components/parameters/StatusFilter' }, { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/payments/{payment}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'un paiement
+      parameters: [ { $ref: '#/components/parameters/PaymentId' } ]
+      responses: { '200': { description: Paiement., content: { application/json: { schema: { $ref: '#/components/schemas/Payment' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/ratings:
+    get: { tags: [Admin - Catalogues], summary: Liste des notes/avis, parameters: [ { $ref: '#/components/parameters/Page' } ], responses: { '200': { description: Liste paginée. } } }
+  /api/admin/ratings/{rating}:
+    get:
+      tags: [Admin - Catalogues]
+      summary: Détail d'une note
+      parameters: [ { name: rating, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Note., content: { application/json: { schema: { $ref: '#/components/schemas/Rating' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+    delete:
+      tags: [Admin - Catalogues]
+      summary: Supprimer une note (modération)
+      parameters: [ { name: rating, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Supprimée. }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  # ============================================================ ADMIN - FINANCE
+  /api/admin/subscriptions:
+    get:
+      tags: [Admin - Finance]
+      summary: Liste des plans d'abonnement
+      responses: { '200': { description: Liste., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Subscription' } } } } } }
+    post:
+      tags: [Admin - Finance]
+      summary: Créer un plan d'abonnement
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SubscriptionRequest' } } } }
+      responses: { '201': { description: Créé., content: { application/json: { schema: { $ref: '#/components/schemas/Subscription' } } } }, '422': { $ref: '#/components/responses/ValidationError' } }
+  /api/admin/subscriptions/{subscription}:
+    get:
+      tags: [Admin - Finance]
+      summary: Détail d'un plan
+      parameters: [ { name: subscription, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Plan., content: { application/json: { schema: { $ref: '#/components/schemas/Subscription' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+    put:
+      tags: [Admin - Finance]
+      summary: Mettre à jour un plan
+      parameters: [ { name: subscription, in: path, required: true, schema: { type: string, format: uuid } } ]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/SubscriptionRequest' } } } }
+      responses: { '200': { description: Mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Subscription' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+    delete:
+      tags: [Admin - Finance]
+      summary: Supprimer un plan
+      parameters: [ { name: subscription, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Supprimé. }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/settings:
+    get:
+      tags: [Admin - Finance]
+      summary: Liste des réglages back-office
+      description: 'Taux de commission, tarification livraison, quotas gratuits, frais PayGate... Filtre : ?group=.'
+      parameters: [ { name: group, in: query, schema: { type: string } } ]
+      responses: { '200': { description: Réglages., content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Setting' } } } } } }
+  /api/admin/settings/{key}:
+    patch:
+      tags: [Admin - Finance]
+      summary: Modifier la valeur d'un réglage
+      parameters: [ { name: key, in: path, required: true, schema: { type: string } } ]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [value], properties: { value: {} } } } } }
+      responses: { '200': { description: Mis à jour., content: { application/json: { schema: { $ref: '#/components/schemas/Setting' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+
+  /api/admin/withdrawals:
+    get:
+      tags: [Admin - Finance]
+      summary: Liste des demandes de retrait
+      parameters: [ { $ref: '#/components/parameters/StatusFilter' }, { $ref: '#/components/parameters/Page' } ]
+      responses: { '200': { description: Liste paginée., content: { application/json: { schema: { $ref: '#/components/schemas/Paginated' } } } } }
+  /api/admin/withdrawals/{withdrawal}/pay:
+    patch:
+      tags: [Admin - Finance]
+      summary: Marquer une demande comme payée
+      description: Une fois le virement mobile money envoyé manuellement (pas d'API de décaissement PayGate).
+      parameters: [ { name: withdrawal, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Marquée payée., content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalRequest' } } } }, '404': { $ref: '#/components/responses/NotFound' }, '422': { $ref: '#/components/responses/UnprocessableState' } }
+  /api/admin/withdrawals/{withdrawal}/reject:
+    patch:
+      tags: [Admin - Finance]
+      summary: Rejeter une demande (recrédite le portefeuille)
+      parameters: [ { name: withdrawal, in: path, required: true, schema: { type: string, format: uuid } } ]
+      responses: { '200': { description: Rejetée., content: { application/json: { schema: { $ref: '#/components/schemas/WithdrawalRequest' } } } }, '404': { $ref: '#/components/responses/NotFound' }, '422': { $ref: '#/components/responses/UnprocessableState' } }
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: 'Jeton personnel Laravel Sanctum. En-tête `Authorization: Bearer <token>`.'
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1 }
+      description: Numéro de page (pagination Laravel).
+    StatusFilter:
+      name: status
+      in: query
+      schema: { type: string }
+      description: Filtre par statut.
+    ProductId: { name: product, in: path, required: true, schema: { type: string, format: uuid } }
+    OrderId: { name: order, in: path, required: true, schema: { type: string, format: uuid } }
+    DeliveryId: { name: delivery, in: path, required: true, schema: { type: string, format: uuid } }
+    PropertyId: { name: property, in: path, required: true, schema: { type: string, format: uuid } }
+    ReservationId: { name: reservation, in: path, required: true, schema: { type: string, format: uuid } }
+    JobOfferId: { name: jobOffer, in: path, required: true, schema: { type: string, format: uuid } }
+    ApplicationId: { name: application, in: path, required: true, schema: { type: string, format: uuid } }
+    PaymentId: { name: payment, in: path, required: true, schema: { type: string, format: uuid } }
+    VendorId: { name: vendor, in: path, required: true, schema: { type: string, format: uuid } }
+    AddressId: { name: address, in: path, required: true, schema: { type: string, format: uuid } }
+
+  responses:
+    Unauthorized:
+      description: Non authentifié (jeton manquant ou invalide).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Profil requis absent ou ressource non détenue.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Ressource introuvable ou non accessible.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Conflit (doublon, profil déjà existant, paiement déjà réussi...).
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    UnprocessableState:
+      description: Transition d'état interdite ou pré-condition métier non remplie.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    TooManyRequests:
+      description: Trop de requêtes (throttle OTP). En-tête `Retry-After`.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    GatewayError:
+      description: Passerelle PayGate / SMS injoignable ou refus.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    ValidationError:
+      description: Erreur de validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+
+  schemas:
+
+    # ---------- Génériques
+    Error:
+      type: object
+      properties:
+        message: { type: string }
+    ValidationError:
+      type: object
+      properties:
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+    Paginated:
+      type: object
+      description: Réponse paginée standard de Laravel (`LengthAwarePaginator`).
+      properties:
+        current_page: { type: integer }
+        data: { type: array, items: { type: object } }
+        first_page_url: { type: string }
+        last_page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+
+    # ---------- Auth / OTP
+    RegisterRequest:
+      type: object
+      required: [full_name, phone, password, password_confirmation, user_type]
+      properties:
+        full_name: { type: string, maxLength: 255 }
+        phone: { type: string, maxLength: 255, description: 'Unique.' }
+        email: { type: string, format: email, nullable: true }
+        password: { type: string, minLength: 8 }
+        password_confirmation: { type: string }
+        user_type: { type: string, enum: [client, vendor, driver, property_owner, recruiter, job_seeker] }
+        profile_photo: { type: string, nullable: true }
+        current_latitude: { type: number, minimum: -90, maximum: 90, nullable: true }
+        current_longitude: { type: number, minimum: -180, maximum: 180, nullable: true }
+        otp_token: { type: string, nullable: true, description: 'Requis si OTP_REQUIRED_FOR_REGISTRATION=true.' }
+    LoginRequest:
+      type: object
+      required: [login, password]
+      properties:
+        login: { type: string, description: 'Email ou téléphone (auto-détecté).' }
+        password: { type: string }
+        device_name: { type: string, nullable: true }
+    AuthTokenResponse:
+      type: object
+      properties:
+        token: { type: string }
+        user: { $ref: '#/components/schemas/User' }
+    UpdateMeRequest:
+      type: object
+      properties:
+        full_name: { type: string, maxLength: 255 }
+        email: { type: string, format: email, nullable: true }
+        profile_photo: { type: string, nullable: true }
+        current_latitude: { type: number, nullable: true }
+        current_longitude: { type: number, nullable: true }
+    PhoneRequest:
+      type: object
+      required: [phone]
+      properties:
+        phone: { type: string, maxLength: 30 }
+    VerifyOtpRequest:
+      type: object
+      required: [code]
+      properties:
+        phone: { type: string, maxLength: 30, description: 'Requis si non authentifié.' }
+        code: { type: string, pattern: '^[0-9]{4,8}$' }
+    ResetPasswordRequest:
+      type: object
+      required: [phone, reset_token, password, password_confirmation]
+      properties:
+        phone: { type: string, maxLength: 30 }
+        reset_token: { type: string }
+        password: { type: string, minLength: 8 }
+        password_confirmation: { type: string }
+
+    # ---------- Profils métier (requêtes)
+    VendorProfileRequest:
+      type: object
+      required: [shop_name]
+      properties:
+        shop_name: { type: string, maxLength: 255 }
+        description: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+    DriverProfileRequest:
+      type: object
+      required: [vehicle_type]
+      properties:
+        vehicle_type: { type: string, maxLength: 255 }
+        license_number: { type: string, nullable: true }
+        coverage_zone: { type: string, nullable: true }
+        is_available: { type: boolean }
+        current_latitude: { type: number, nullable: true }
+        current_longitude: { type: number, nullable: true }
+    PropertyOwnerProfileRequest:
+      type: object
+      required: [owner_type]
+      properties:
+        owner_type: { type: string, enum: [individual, hotel] }
+        company_name: { type: string, nullable: true, description: 'Requis si owner_type=hotel.' }
+    RecruiterProfileRequest:
+      type: object
+      properties:
+        company_name: { type: string, nullable: true }
+        industry: { type: string, nullable: true }
+    JobSeekerProfileRequest:
+      type: object
+      properties:
+        profession: { type: string, nullable: true }
+        skills: { type: string, nullable: true }
+        experience: { type: string, nullable: true }
+        availability: { type: string, nullable: true }
+
+    # ---------- Commerce (requêtes)
+    ProductRequest:
+      type: object
+      required: [name, price]
+      properties:
+        name: { type: string, maxLength: 255 }
+        description: { type: string, nullable: true }
+        price: { type: number, minimum: 0 }
+        category: { type: string, nullable: true }
+        image_url: { type: string, nullable: true }
+        stock: { type: integer, minimum: 0, nullable: true }
+        is_available: { type: boolean }
+    StoreOrderRequest:
+      type: object
+      required: [vendor_id, delivery_address, items]
+      properties:
+        vendor_id: { type: string, format: uuid }
+        delivery_address: { type: string, maxLength: 255 }
+        delivery_latitude: { type: number, nullable: true }
+        delivery_longitude: { type: number, nullable: true }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [product_id, quantity]
+            properties:
+              product_id: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1 }
+
+    # ---------- Immobilier (requêtes)
+    PropertyRequest:
+      type: object
+      required: [title, property_type, address, price, price_unit]
+      properties:
+        title: { type: string, maxLength: 255 }
+        description: { type: string, nullable: true }
+        property_type: { type: string, enum: [room, studio, apartment, house, hotel_room] }
+        address: { type: string, maxLength: 255 }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        price: { type: number, minimum: 0 }
+        price_unit: { type: string, enum: [night, month] }
+        bedrooms: { type: integer, minimum: 0, nullable: true }
+        image_urls: { type: string, nullable: true }
+        is_available: { type: boolean }
+    StoreReservationRequest:
+      type: object
+      required: [property_id, check_in, check_out]
+      properties:
+        property_id: { type: string, format: uuid }
+        check_in: { type: string, format: date, description: '>= aujourd''hui.' }
+        check_out: { type: string, format: date, description: '> check_in.' }
+
+    # ---------- Emplois (requêtes)
+    JobOfferRequest:
+      type: object
+      required: [title, location, daily_rate, start_date]
+      properties:
+        title: { type: string, maxLength: 255 }
+        description: { type: string, nullable: true }
+        location: { type: string, maxLength: 255 }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        daily_rate: { type: number, minimum: 0 }
+        required_skills: { type: string, nullable: true }
+        start_date: { type: string, format: date }
+        duration: { type: string, nullable: true }
+        people_needed: { type: integer, minimum: 1, nullable: true }
+        is_active: { type: boolean }
+
+    # ---------- Transverses (requêtes)
+    StorePaymentRequest:
+      type: object
+      required: [reference_type, reference_id, payment_method, phone_number]
+      properties:
+        reference_type: { type: string, enum: [order, reservation, subscription] }
+        reference_id: { type: string, format: uuid }
+        payment_method: { type: string, enum: [flooz, tmoney] }
+        phone_number: { type: string, pattern: '^[0-9]{8}$', description: 'Numéro togolais à 8 chiffres.' }
+    PayGateCallbackRequest:
+      type: object
+      required: [identifier]
+      properties:
+        identifier: { type: string }
+        tx_reference: { type: string, nullable: true }
+        payment_reference: { type: string, nullable: true }
+        amount: { type: number, nullable: true }
+        datetime: { type: string, nullable: true }
+        payment_method: { type: string, nullable: true }
+        phone_number: { type: string, nullable: true }
+    StoreWithdrawalRequest:
+      type: object
+      required: [amount, phone_number]
+      properties:
+        amount: { type: number, minimum: 1 }
+        phone_number: { type: string, pattern: '^[0-9]{8}$' }
+    AddressRequest:
+      type: object
+      required: [label, address]
+      properties:
+        label: { type: string, maxLength: 100 }
+        address: { type: string, maxLength: 255 }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        is_default: { type: boolean }
+    StoreMessageRequest:
+      type: object
+      required: [receiver_id, content]
+      properties:
+        receiver_id: { type: string, format: uuid, description: 'Doit exister et ne pas être soi-même.' }
+        content: { type: string, maxLength: 2000 }
+    StoreRatingRequest:
+      type: object
+      required: [target_type, target_id, score]
+      properties:
+        target_type: { type: string, enum: [vendor, driver, property_owner, recruiter, job_seeker] }
+        target_id: { type: string, format: uuid }
+        score: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, maxLength: 1000, nullable: true }
+    SubscriptionRequest:
+      type: object
+      required: [name, price, duration_days, subscriber_type]
+      properties:
+        name: { type: string, maxLength: 255 }
+        price: { type: number, minimum: 0 }
+        duration_days: { type: integer, minimum: 1 }
+        features: { type: string, nullable: true }
+        subscriber_type: { type: string, enum: [property_owner, recruiter] }
+
+    # ---------- Entités (réponses)
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        full_name: { type: string }
+        phone: { type: string }
+        email: { type: string, nullable: true }
+        user_type: { type: string, enum: [client, vendor, driver, property_owner, recruiter, job_seeker, admin] }
+        status: { type: string, enum: [active, suspended] }
+        is_verified: { type: boolean }
+        phone_verified_at: { type: string, format: date-time, nullable: true }
+        profile_photo: { type: string, nullable: true }
+        current_latitude: { type: number, nullable: true }
+        current_longitude: { type: number, nullable: true }
+        created_at: { type: string, format: date-time }
+    Vendor:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        shop_name: { type: string }
+        description: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+    Driver:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        vehicle_type: { type: string }
+        license_number: { type: string, nullable: true }
+        coverage_zone: { type: string, nullable: true }
+        is_available: { type: boolean }
+        current_latitude: { type: number, nullable: true }
+        current_longitude: { type: number, nullable: true }
+    PropertyOwner:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        owner_type: { type: string, enum: [individual, hotel] }
+        company_name: { type: string, nullable: true }
+        subscription_id: { type: string, format: uuid, nullable: true }
+        subscription_expires_at: { type: string, format: date-time, nullable: true }
+    Recruiter:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        company_name: { type: string, nullable: true }
+        industry: { type: string, nullable: true }
+        subscription_id: { type: string, format: uuid, nullable: true }
+        subscription_expires_at: { type: string, format: date-time, nullable: true }
+    JobSeeker:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        profession: { type: string, nullable: true }
+        skills: { type: string, nullable: true }
+        experience: { type: string, nullable: true }
+        availability: { type: string, nullable: true }
+    Product:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        vendor_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        price: { type: number }
+        category: { type: string, nullable: true }
+        image_url: { type: string, nullable: true }
+        stock: { type: integer }
+        is_available: { type: boolean }
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        vendor_id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, accepted, preparing, in_delivery, delivered, cancelled] }
+        total_amount: { type: number }
+        delivery_fee: { type: number }
+        commission_amount: { type: number }
+        vendor_net_amount: { type: number }
+        delivery_address: { type: string }
+        delivery_latitude: { type: number, nullable: true }
+        delivery_longitude: { type: number, nullable: true }
+        wallet_settled_at: { type: string, format: date-time, nullable: true }
+        items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }
+        created_at: { type: string, format: date-time }
+    OrderItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        product_id: { type: string, format: uuid }
+        quantity: { type: integer }
+        unit_price: { type: number }
+    Delivery:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        driver_id: { type: string, format: uuid, nullable: true }
+        status: { type: string, enum: [awaiting_driver, assigned, picked_up, delivered] }
+        delivery_fee: { type: number }
+        commission_amount: { type: number }
+        driver_net_amount: { type: number }
+        delivery_time: { type: string, format: date-time, nullable: true }
+    Property:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        owner_id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        property_type: { type: string, enum: [room, studio, apartment, house, hotel_room] }
+        address: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        price: { type: number }
+        price_unit: { type: string, enum: [night, month] }
+        bedrooms: { type: integer, nullable: true }
+        image_urls: { type: string, nullable: true }
+        is_available: { type: boolean }
+    Reservation:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        property_id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        check_in: { type: string, format: date }
+        check_out: { type: string, format: date }
+        total_price: { type: number }
+        status: { type: string, enum: [pending, confirmed, cancelled, completed] }
+    JobOffer:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        recruiter_id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        location: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        daily_rate: { type: number }
+        required_skills: { type: string, nullable: true }
+        start_date: { type: string, format: date }
+        duration: { type: string, nullable: true }
+        people_needed: { type: integer, nullable: true }
+        is_active: { type: boolean }
+    JobApplication:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        job_offer_id: { type: string, format: uuid }
+        job_seeker_id: { type: string, format: uuid }
+        status: { type: string, enum: [pending, accepted, rejected, completed] }
+        applied_at: { type: string, format: date-time }
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        reference_type: { type: string, enum: [order, reservation, subscription] }
+        reference_id: { type: string, format: uuid }
+        amount: { type: number }
+        payment_method: { type: string, enum: [flooz, tmoney] }
+        status: { type: string, enum: [pending, success, failed, refunded] }
+        identifier: { type: string, description: 'Notre référence TELU-XXXXXXXXXXXX envoyée à PayGate.' }
+        transaction_id: { type: string, nullable: true, description: 'tx_reference PayGate.' }
+        payment_reference: { type: string, nullable: true, description: 'Reçu Flooz/TMoney.' }
+        phone_number: { type: string, nullable: true }
+        paygate_fee_amount: { type: number, nullable: true }
+        paid_at: { type: string, format: date-time, nullable: true }
+    Subscription:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        price: { type: number }
+        duration_days: { type: integer }
+        features: { type: string, nullable: true }
+        subscriber_type: { type: string, enum: [property_owner, recruiter] }
+    Wallet:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        walletable_type: { type: string }
+        walletable_id: { type: string, format: uuid }
+        balance: { type: number }
+        transactions: { type: array, items: { $ref: '#/components/schemas/WalletTransaction' } }
+    WalletTransaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        wallet_id: { type: string, format: uuid }
+        type: { type: string, enum: [credit, debit] }
+        amount: { type: number }
+        balance_after: { type: number }
+        reference_type: { type: string, nullable: true }
+        reference_id: { type: string, format: uuid, nullable: true }
+        description: { type: string, nullable: true }
+    WithdrawalRequest:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        wallet_id: { type: string, format: uuid }
+        amount: { type: number }
+        phone_number: { type: string }
+        status: { type: string, enum: [pending, paid, rejected] }
+        processed_at: { type: string, format: date-time, nullable: true }
+        processed_by: { type: string, format: uuid, nullable: true }
+    Address:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        label: { type: string }
+        address: { type: string }
+        latitude: { type: number, nullable: true }
+        longitude: { type: number, nullable: true }
+        is_default: { type: boolean }
+    Message:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        sender_id: { type: string, format: uuid }
+        receiver_id: { type: string, format: uuid }
+        content: { type: string }
+        read_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    Conversation:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/User' }
+        last_message: { $ref: '#/components/schemas/Message' }
+        unread_count: { type: integer }
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        type: { type: string }
+        message: { type: string }
+        read_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+    Rating:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        rater_id: { type: string, format: uuid }
+        target_type: { type: string, enum: [vendor, driver, property_owner, recruiter, job_seeker] }
+        target_id: { type: string, format: uuid }
+        score: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: string, nullable: true }
+    Setting:
+      type: object
+      properties:
+        key: { type: string }
+        value: { type: string }
+        type: { type: string, enum: [string, integer, decimal, boolean] }
+        group: { type: string, nullable: true }
+        description: { type: string, nullable: true }

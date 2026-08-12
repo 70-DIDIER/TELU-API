@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\PropertyOwner;
 use App\Models\Subscription;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -122,7 +123,12 @@ class PaymentTest extends TestCase
     public function test_a_subscription_payment_uses_the_plan_price(): void
     {
         Http::fake(['*/api/v1/pay' => Http::response(['status' => 0, 'tx_reference' => 'TX-2'])]);
-        $plan = Subscription::factory()->create(['price' => 12000]);
+
+        $ownerUser = User::factory()->type('property_owner')->create();
+        PropertyOwner::factory()->create(['user_id' => $ownerUser->id]);
+        Sanctum::actingAs($ownerUser);
+
+        $plan = Subscription::factory()->create(['price' => 12000, 'subscriber_type' => 'property_owner']);
 
         $this->postJson('/api/payments', [
             'reference_type' => 'subscription',
@@ -132,6 +138,68 @@ class PaymentTest extends TestCase
         ])->assertCreated();
 
         $this->assertEquals(12000.0, (float) Payment::first()->amount);
+    }
+
+    public function test_a_subscription_payment_requires_the_matching_profile(): void
+    {
+        // The authenticated user (from setUp) is a client, not a property owner.
+        $plan = Subscription::factory()->create(['subscriber_type' => 'property_owner']);
+
+        $this->postJson('/api/payments', [
+            'reference_type' => 'subscription',
+            'reference_id' => $plan->id,
+            'payment_method' => 'tmoney',
+            'phone_number' => '90112233',
+        ])->assertForbidden();
+    }
+
+    public function test_a_successful_subscription_payment_activates_the_plan(): void
+    {
+        Http::fake(['*/api/v1/status' => Http::response(['status' => 0, 'tx_reference' => 'TX-9'])]);
+
+        $ownerUser = User::factory()->type('property_owner')->create();
+        $owner = PropertyOwner::factory()->create(['user_id' => $ownerUser->id]);
+        Sanctum::actingAs($ownerUser);
+
+        $plan = Subscription::factory()->create(['subscriber_type' => 'property_owner', 'duration_days' => 30]);
+
+        $payment = Payment::factory()->forSubscription($plan->id)->create([
+            'user_id' => $ownerUser->id,
+            'status' => 'pending',
+            'transaction_id' => 'TX-9',
+        ]);
+
+        $this->postJson("/api/payments/{$payment->id}/check")->assertOk()->assertJsonPath('status', 'success');
+
+        $owner->refresh();
+        $this->assertSame($plan->id, $owner->subscription_id);
+        $this->assertNotNull($owner->subscription_expires_at);
+        $this->assertTrue($owner->hasActiveSubscription());
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $ownerUser->id,
+            'type' => 'subscription',
+        ]);
+    }
+
+    public function test_a_successful_payment_records_the_paygate_fee(): void
+    {
+        Http::fake(['*/api/v1/status' => Http::response(['status' => 0, 'tx_reference' => 'TX-8'])]);
+
+        $payment = Payment::factory()->create([
+            'user_id' => $this->client->id,
+            'status' => 'pending',
+            'transaction_id' => 'TX-8',
+            'payment_method' => 'flooz',
+            'amount' => 10000,
+            'reference_type' => 'order',
+            'reference_id' => $this->order->id,
+        ]);
+
+        $this->postJson("/api/payments/{$payment->id}/check")->assertOk();
+
+        // 2.5% default Flooz rate — informational only, never touches the amount itself.
+        $this->assertEquals(250.0, (float) $payment->fresh()->paygate_fee_amount);
     }
 
     public function test_check_confirms_a_pending_payment_from_the_gateway(): void

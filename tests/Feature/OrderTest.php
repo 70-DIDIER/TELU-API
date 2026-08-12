@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Api\OrderController;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\Geo;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -53,7 +55,13 @@ class OrderTest extends TestCase
         $response->assertCreated()->assertJsonPath('status', 'pending');
 
         $order = Order::first();
-        $this->assertEquals(5000.0, (float) $order->total_amount);
+        // 1500*2 + 2000*1 = 5000 d'articles + le frais de livraison plancher
+        // (aucune coordonnée GPS fournie dans cette requête → repli sur delivery_min_fee).
+        $this->assertEquals(OrderController::DEFAULT_MIN_FEE, (float) $order->delivery_fee);
+        $this->assertEquals(5000.0 + OrderController::DEFAULT_MIN_FEE, (float) $order->total_amount);
+        // Commission plateforme calculée sur le sous-total (hors frais de livraison).
+        $this->assertEquals(round(5000.0 * OrderController::DEFAULT_COMMISSION_RATE, 2), (float) $order->commission_amount);
+        $this->assertEquals(5000.0 - (float) $order->commission_amount, (float) $order->vendor_net_amount);
         $this->assertSame($this->client->id, $order->customer_id);
         $this->assertDatabaseCount('order_items', 2);
 
@@ -68,6 +76,40 @@ class OrderTest extends TestCase
             'user_id' => $this->vendor->user_id,
             'type' => 'order',
         ]);
+    }
+
+    public function test_the_delivery_fee_is_computed_from_the_distance_when_coordinates_are_known(): void
+    {
+        $this->vendor->update(['latitude' => 6.1725, 'longitude' => 1.2314]);
+        $product = $this->product(['price' => 1000]);
+
+        // ~5.06 km away (Bè, Lomé) from the vendor's coordinates.
+        $response = $this->postJson('/api/orders', [
+            'vendor_id' => $this->vendor->id,
+            'delivery_address' => 'Bè, Lomé',
+            'delivery_latitude' => 6.13,
+            'delivery_longitude' => 1.215,
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])->assertCreated();
+
+        $order = Order::first();
+
+        // frais = base_fee + distance_km * rate_per_km, borné par [min, max].
+        $expectedFee = min(
+            max(
+                OrderController::DEFAULT_BASE_FEE + $this->distanceKm(6.1725, 1.2314, 6.13, 1.215) * OrderController::DEFAULT_RATE_PER_KM,
+                OrderController::DEFAULT_MIN_FEE
+            ),
+            OrderController::DEFAULT_MAX_FEE
+        );
+
+        $this->assertEqualsWithDelta(round($expectedFee, 2), (float) $order->delivery_fee, 0.01);
+        $this->assertGreaterThan(OrderController::DEFAULT_MIN_FEE, (float) $order->delivery_fee);
+    }
+
+    private function distanceKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        return Geo::distanceKm($lat1, $lng1, $lat2, $lng2);
     }
 
     public function test_placing_an_order_does_not_touch_the_stock(): void

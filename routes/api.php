@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AddressController;
 use App\Http\Controllers\Api\Admin\AdminDeliveryController;
 use App\Http\Controllers\Api\Admin\AdminJobApplicationController;
 use App\Http\Controllers\Api\Admin\AdminJobOfferController;
@@ -12,10 +13,12 @@ use App\Http\Controllers\Api\Admin\AdminPropertyOwnerController;
 use App\Http\Controllers\Api\Admin\AdminRatingController;
 use App\Http\Controllers\Api\Admin\AdminRecruiterController;
 use App\Http\Controllers\Api\Admin\AdminReservationController;
+use App\Http\Controllers\Api\Admin\AdminSettingController;
 use App\Http\Controllers\Api\Admin\AdminStatsController;
 use App\Http\Controllers\Api\Admin\AdminSubscriptionController;
 use App\Http\Controllers\Api\Admin\AdminUserController;
 use App\Http\Controllers\Api\Admin\AdminVendorController;
+use App\Http\Controllers\Api\Admin\AdminWithdrawalController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverDeliveryController;
@@ -28,6 +31,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\OtpController;
 use App\Http\Controllers\Api\OwnerPropertyController;
 use App\Http\Controllers\Api\OwnerReservationController;
+use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PropertyController;
@@ -37,9 +41,12 @@ use App\Http\Controllers\Api\RecruiterApplicationController;
 use App\Http\Controllers\Api\RecruiterController;
 use App\Http\Controllers\Api\RecruiterJobOfferController;
 use App\Http\Controllers\Api\ReservationController;
+use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Api\VendorOrderController;
 use App\Http\Controllers\Api\VendorProductController;
+use App\Http\Controllers\Api\WalletController;
+use App\Http\Controllers\Api\WithdrawalController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -55,10 +62,18 @@ Route::post('/auth/login', [AuthController::class, 'login']);
 Route::middleware('throttle:10,1')->group(function () {
     Route::post('/auth/otp/send', [OtpController::class, 'send']);
     Route::post('/auth/otp/verify', [OtpController::class, 'verify']);
+
+    // Mot de passe oublié : même mécanique OTP, purpose `password_reset`.
+    Route::post('/auth/password/forgot', [PasswordResetController::class, 'forgot']);
+    Route::post('/auth/password/verify', [PasswordResetController::class, 'verify']);
+    Route::post('/auth/password/reset', [PasswordResetController::class, 'reset']);
 });
 
 // Webhook de confirmation PayGate Global (non authentifié, re-vérifié côté serveur).
-Route::post('/payments/callback', [PaymentController::class, 'callback']);
+// Throttlé : un identifiant pending connu ne doit pas pouvoir déclencher des
+// appels sortants vers PayGate en boucle (amplification).
+Route::post('/payments/callback', [PaymentController::class, 'callback'])
+    ->middleware('throttle:60,1');
 
 /*
 |--------------------------------------------------------------------------
@@ -67,6 +82,7 @@ Route::post('/payments/callback', [PaymentController::class, 'callback']);
 */
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
+    Route::put('/auth/me', [AuthController::class, 'updateMe']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
 
     // Vérification par OTP SMS du numéro déjà enregistré sur le compte.
@@ -125,6 +141,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/driver/deliveries', [DriverDeliveryController::class, 'index']);
     Route::post('/driver/deliveries/{delivery}/claim', [DriverDeliveryController::class, 'claim']);
     Route::post('/driver/deliveries/{delivery}/pickup', [DriverDeliveryController::class, 'pickup']);
+    Route::post('/driver/deliveries/{delivery}/deliver', [DriverDeliveryController::class, 'deliver']);
 
     // Public property catalogue (browse/search) — any authenticated user.
     Route::get('/properties', [PropertyController::class, 'index']);
@@ -151,6 +168,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/job-offers', [JobOfferController::class, 'index']);
     Route::get('/job-offers/{jobOffer}', [JobOfferController::class, 'show']);
 
+    // Public job-seeker directory ("find talent") — any authenticated user.
+    Route::get('/job-seekers', [JobSeekerController::class, 'browse']);
+    Route::get('/job-seekers/{jobSeeker}', [JobSeekerController::class, 'showPublic']);
+
     // Job-offer management — scoped to the authenticated recruiter's own offers.
     Route::get('/recruiter/job-offers', [RecruiterJobOfferController::class, 'index']);
     Route::post('/recruiter/job-offers', [RecruiterJobOfferController::class, 'store']);
@@ -166,6 +187,15 @@ Route::middleware('auth:sanctum')->group(function () {
     // Applications received by the authenticated recruiter.
     Route::get('/recruiter/job-offers/{jobOffer}/applications', [RecruiterApplicationController::class, 'index']);
     Route::patch('/recruiter/applications/{application}/status', [RecruiterApplicationController::class, 'updateStatus']);
+
+    // Saved delivery addresses of the authenticated user (cross-cutting: used
+    // by commerce checkout, and readable by drivers via the order's
+    // delivery_latitude/longitude once an order references one).
+    Route::get('/addresses', [AddressController::class, 'index']);
+    Route::post('/addresses', [AddressController::class, 'store']);
+    Route::put('/addresses/{address}', [AddressController::class, 'update']);
+    Route::delete('/addresses/{address}', [AddressController::class, 'destroy']);
+    Route::patch('/addresses/{address}/default', [AddressController::class, 'setDefault']);
 
     // Notifications of the authenticated user (fed by every module).
     Route::get('/notifications', [NotificationController::class, 'index']);
@@ -189,6 +219,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/payments', [PaymentController::class, 'store']);
     Route::get('/payments/{payment}', [PaymentController::class, 'show']);
     Route::post('/payments/{payment}/check', [PaymentController::class, 'check']);
+
+    // Subscription plans catalogue (browse before paying). Filter: ?subscriber_type=.
+    Route::get('/subscriptions', [SubscriptionController::class, 'index']);
+
+    // Wallets (commerce commission ledger) of the authenticated vendor/driver.
+    Route::get('/vendor/wallet', [WalletController::class, 'vendor']);
+    Route::get('/driver/wallet', [WalletController::class, 'driver']);
+
+    // Payout requests from the authenticated vendor/driver's wallet.
+    Route::get('/withdrawals', [WithdrawalController::class, 'index']);
+    Route::post('/withdrawals', [WithdrawalController::class, 'store']);
 
     /*
     |--------------------------------------------------------------------------
@@ -267,5 +308,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/subscriptions/{subscription}', [AdminSubscriptionController::class, 'show']);
         Route::put('/subscriptions/{subscription}', [AdminSubscriptionController::class, 'update']);
         Route::delete('/subscriptions/{subscription}', [AdminSubscriptionController::class, 'destroy']);
+
+        // Cross-cutting — backoffice settings (commission rates, delivery pricing, quotas...).
+        Route::get('/settings', [AdminSettingController::class, 'index']);
+        Route::patch('/settings/{key}', [AdminSettingController::class, 'update']);
+
+        // Cross-cutting — payout requests (manual mobile money settlement).
+        Route::get('/withdrawals', [AdminWithdrawalController::class, 'index']);
+        Route::patch('/withdrawals/{withdrawal}/pay', [AdminWithdrawalController::class, 'markPaid']);
+        Route::patch('/withdrawals/{withdrawal}/reject', [AdminWithdrawalController::class, 'reject']);
     });
 });

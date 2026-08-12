@@ -16,7 +16,7 @@ class AdminRecruiterController extends Controller
     public function index(Request $request): JsonResponse
     {
         $recruiters = Recruiter::query()
-            ->with('user:id,full_name,phone,email,status')
+            ->with(['user:id,full_name,phone,email,status', 'subscription:id,name'])
             ->withCount(['jobOffers', 'applications'])
             ->when($request->filled('industry'), fn ($q) => $q->where('industry', $request->string('industry')))
             ->when($request->filled('search'), fn ($q) => $q->where('company_name', 'like', '%'.$request->string('search').'%'))
@@ -32,7 +32,7 @@ class AdminRecruiterController extends Controller
     public function show(string $recruiter): JsonResponse
     {
         $found = Recruiter::query()
-            ->with('user:id,full_name,phone,email,status')
+            ->with(['user:id,full_name,phone,email,status', 'subscription:id,name'])
             ->withCount(['jobOffers', 'applications'])
             ->find($recruiter);
 

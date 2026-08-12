@@ -20,7 +20,7 @@ class SubscriptionFactory extends Factory
             'price' => fake()->randomFloat(2, 1000, 25000),
             'duration_days' => fake()->randomElement([7, 30, 90, 365]),
             'features' => fake()->sentence(),
-            'subscriber_type' => fake()->randomElement(['vendor', 'driver']),
+            'subscriber_type' => fake()->randomElement(['property_owner', 'recruiter']),
         ];
     }
 }

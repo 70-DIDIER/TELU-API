@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'driver_id',
     'status',
     'delivery_fee',
+    'commission_amount',
+    'driver_net_amount',
     'pickup_time',
     'delivery_time',
     'assigned_at',
@@ -28,6 +30,8 @@ class Delivery extends Model
     {
         return [
             'delivery_fee' => 'decimal:2',
+            'commission_amount' => 'decimal:2',
+            'driver_net_amount' => 'decimal:2',
             'pickup_time' => 'datetime',
             'delivery_time' => 'datetime',
             'assigned_at' => 'datetime',

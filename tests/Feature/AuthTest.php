@@ -110,6 +110,36 @@ class AuthTest extends TestCase
         $this->getJson('/api/auth/me')->assertUnauthorized();
     }
 
+    public function test_update_me_updates_the_authenticated_users_fields(): void
+    {
+        $user = User::factory()->create(['full_name' => 'Ancien Nom', 'email' => null]);
+        Sanctum::actingAs($user);
+
+        $this->putJson('/api/auth/me', [
+            'full_name' => 'Nouveau Nom',
+            'email' => 'nouveau@example.com',
+        ])->assertOk()
+            ->assertJsonPath('full_name', 'Nouveau Nom')
+            ->assertJsonPath('email', 'nouveau@example.com');
+
+        $this->assertDatabaseHas('users', ['id' => $user->id, 'full_name' => 'Nouveau Nom']);
+    }
+
+    public function test_update_me_rejects_an_email_already_taken_by_another_user(): void
+    {
+        User::factory()->create(['email' => 'pris@example.com']);
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $this->putJson('/api/auth/me', ['email' => 'pris@example.com'])
+            ->assertUnprocessable()->assertJsonValidationErrors('email');
+    }
+
+    public function test_update_me_requires_authentication(): void
+    {
+        $this->putJson('/api/auth/me', ['full_name' => 'X'])->assertUnauthorized();
+    }
+
     public function test_logout_revokes_the_current_token(): void
     {
         $user = User::factory()->create();

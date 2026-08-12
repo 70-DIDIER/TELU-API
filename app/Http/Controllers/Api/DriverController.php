@@ -30,9 +30,11 @@ class DriverController extends Controller
     {
         $user = $request->user();
 
-        if ($user->user_type !== 'driver') {
+        // Le compte client est standard : n'importe quel compte non-admin peut
+        // compléter son compte d'un profil livreur (cumul de profils autorisé).
+        if ($user->user_type === 'admin') {
             return response()->json([
-                'message' => 'Seul un compte de type livreur peut créer un profil livreur.',
+                'message' => 'Un compte administrateur ne peut pas créer de profil livreur.',
             ], 403);
         }
 

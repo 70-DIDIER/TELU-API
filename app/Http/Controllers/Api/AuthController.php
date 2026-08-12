@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Http\Requests\Auth\UpdateMeRequest;
 use App\Models\User;
 use App\Services\OtpService;
 use Illuminate\Http\JsonResponse;
@@ -90,6 +91,17 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         return response()->json($request->user());
+    }
+
+    /**
+     * Update the authenticated user's own profile fields.
+     */
+    public function updateMe(UpdateMeRequest $request): JsonResponse
+    {
+        $user = $request->user();
+        $user->update($request->validated());
+
+        return response()->json($user);
     }
 
     /**
