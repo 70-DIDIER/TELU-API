@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\Admin\AdminSubscriptionController;
 use App\Http\Controllers\Api\Admin\AdminUserController;
 use App\Http\Controllers\Api\Admin\AdminVendorController;
 use App\Http\Controllers\Api\Admin\AdminWithdrawalController;
+use App\Http\Controllers\Api\AccountDeletionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverDeliveryController;
@@ -84,6 +85,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/auth/me', [AuthController::class, 'me']);
     Route::put('/auth/me', [AuthController::class, 'updateMe']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
+
+    // Demande de suppression du compte (délai de grâce) et annulation.
+    Route::post('/auth/me/deletion-request', [AccountDeletionController::class, 'request']);
+    Route::delete('/auth/me/deletion-request', [AccountDeletionController::class, 'cancel']);
 
     // Vérification par OTP SMS du numéro déjà enregistré sur le compte.
     Route::post('/otp/send', [OtpController::class, 'sendForMe'])->middleware('throttle:10,1');

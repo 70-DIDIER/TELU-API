@@ -21,6 +21,8 @@ use Laravel\Sanctum\HasApiTokens;
     'profile_photo',
     'user_type',
     'status',
+    'deletion_requested_at',
+    'deletion_reason',
     'current_latitude',
     'current_longitude',
     'is_verified',
@@ -32,6 +34,21 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, HasUuids, Notifiable;
 
+    /** Délai de grâce (jours) avant suppression définitive d'un compte. */
+    public const DELETION_GRACE_DAYS = 30;
+
+    /** true tant qu'une demande de suppression est en cours (dans le délai). */
+    public function hasPendingDeletion(): bool
+    {
+        return $this->deletion_requested_at !== null;
+    }
+
+    /** Date de suppression définitive prévue, ou null si aucune demande. */
+    public function deletionPurgeAt(): ?\Illuminate\Support\Carbon
+    {
+        return $this->deletion_requested_at?->copy()->addDays(self::DELETION_GRACE_DAYS);
+    }
+
     /**
      * @return array<string, string>
      */
@@ -40,6 +57,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'phone_verified_at' => 'datetime',
+            'deletion_requested_at' => 'datetime',
             'password' => 'hashed',
             'is_verified' => 'boolean',
             'current_latitude' => 'decimal:7',

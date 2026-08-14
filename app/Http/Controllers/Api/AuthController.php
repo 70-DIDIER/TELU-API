@@ -75,6 +75,15 @@ class AuthController extends Controller
             ]);
         }
 
+        // Demande de suppression : hors délai de grâce, le compte est considéré
+        // supprimé (purge imminente) ; dans le délai, on autorise la connexion
+        // pour que l'utilisateur puisse annuler sa demande.
+        if ($user->hasPendingDeletion() && $user->deletionPurgeAt()->isPast()) {
+            throw ValidationException::withMessages([
+                'login' => ['Ce compte a été supprimé.'],
+            ]);
+        }
+
         $token = $user->createToken(
             $request->input('device_name', 'api')
         )->plainTextToken;
