@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Carbon;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable([
@@ -27,6 +28,9 @@ use Laravel\Sanctum\HasApiTokens;
     'current_longitude',
     'is_verified',
     'phone_verified_at',
+    'email_verified_at',
+    'provider',
+    'provider_id',
 ])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
@@ -44,7 +48,7 @@ class User extends Authenticatable
     }
 
     /** Date de suppression définitive prévue, ou null si aucune demande. */
-    public function deletionPurgeAt(): ?\Illuminate\Support\Carbon
+    public function deletionPurgeAt(): ?Carbon
     {
         return $this->deletion_requested_at?->copy()->addDays(self::DELETION_GRACE_DAYS);
     }

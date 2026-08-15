@@ -62,4 +62,30 @@ return [
         'timeout' => (int) env('AFRIKSMS_TIMEOUT', 20),
     ],
 
+    /*
+    | Connexion sociale — Google. Le client mobile envoie l'`id_token` obtenu
+    | via expo-auth-session (OpenID Connect) ; le serveur le fait valider par
+    | Google (endpoint tokeninfo) et vérifie que `aud` correspond à l'un des
+    | client IDs déclarés ici (iOS, Android et Web/Expo peuvent différer).
+    | Voir SocialAuthController::google().
+    */
+    'google' => [
+        'client_ids' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('GOOGLE_CLIENT_IDS', ''))
+        ))),
+    ],
+
+    /*
+    | Connexion sociale — Facebook. Le client mobile envoie l'`access_token`
+    | utilisateur obtenu via expo-auth-session ; le serveur interroge le Graph
+    | API pour récupérer le profil et (si app_id/app_secret sont configurés)
+    | vérifie via /debug_token que le jeton a bien été émis pour notre app.
+    | Voir SocialAuthController::facebook().
+    */
+    'facebook' => [
+        'app_id' => env('FACEBOOK_APP_ID'),
+        'app_secret' => env('FACEBOOK_APP_SECRET'),
+    ],
+
 ];

@@ -102,7 +102,7 @@ class PasswordResetController extends Controller
             ], 422);
         }
 
-        $user = $this->findUserByPhone(PhoneNumber::international($data['phone']));
+        $user = $this->findUserByPhone(PhoneNumber::e164($data['phone']));
 
         if (! $user) {
             return response()->json(['message' => 'Aucun compte associé à ce numéro.'], 404);
@@ -123,12 +123,16 @@ class PasswordResetController extends Controller
      */
     private function findUserByPhone(string $internationalPhone): ?User
     {
-        $local = PhoneNumber::local($internationalPhone);
+        $query = User::query()->where('phone', $internationalPhone);
 
-        return User::query()
-            ->where('phone', $internationalPhone)
-            ->orWhere('phone', $local)
-            ->orWhere('phone', '+'.$internationalPhone)
-            ->first();
+        // Filet de sécurité pour les anciennes lignes togolaises qui auraient
+        // pu être enregistrées sous une autre forme (locale à 8 chiffres,
+        // avec un "+" superflu) — non pertinent pour un numéro étranger.
+        if (str_starts_with($internationalPhone, PhoneNumber::DEFAULT_COUNTRY_CODE)) {
+            $query->orWhere('phone', PhoneNumber::local($internationalPhone))
+                ->orWhere('phone', '+'.$internationalPhone);
+        }
+
+        return $query->first();
     }
 }

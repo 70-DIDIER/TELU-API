@@ -130,7 +130,8 @@ class OtpTest extends TestCase
             'otp_token' => $token,
         ])->assertCreated()->assertJsonPath('user.is_verified', true);
 
-        $user = User::where('phone', '90112233')->first();
+        // Stocké en E.164 canonique par le register normalisé.
+        $user = User::where('phone', '22890112233')->first();
         $this->assertNotNull($user->phone_verified_at);
 
         // The token is one-shot.
@@ -148,6 +149,23 @@ class OtpTest extends TestCase
             'password_confirmation' => 'password123',
             'user_type' => 'client',
         ])->assertUnprocessable()->assertJsonValidationErrors('otp_token');
+    }
+
+    public function test_registration_never_requires_the_token_for_a_foreign_number(): void
+    {
+        config(['otp.required_for_registration' => true]);
+
+        // AfrikSMS ne couvre que le Togo : pas de vérification possible pour
+        // un numéro étranger, quel que soit le flag.
+        $this->postJson('/api/auth/register', [
+            'full_name' => 'Sans OTP Étranger',
+            'phone' => '+33612345678',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'user_type' => 'client',
+        ])->assertCreated()->assertJsonPath('user.is_verified', false);
+
+        $this->assertDatabaseHas('users', ['phone' => '33612345678', 'is_verified' => false]);
     }
 
     public function test_an_authenticated_user_can_verify_their_own_number(): void

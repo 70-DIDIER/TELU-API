@@ -2,13 +2,20 @@
 
 namespace App\Support;
 
+use libphonenumber\NumberParseException;
+use libphonenumber\PhoneNumberFormat;
+use libphonenumber\PhoneNumberUtil;
+
 /**
- * Normalisation des numéros de téléphone togolais.
+ * Normalisation des numéros de téléphone.
  *
- * Les numéros sont saisis sous des formes très variées (+228 90 11 22 33,
- * 00228-90112233, 90 11 22 33…). Les partenaires attendent des formats précis :
- * PayGate veut le numéro local à 8 chiffres, AfrikSMS le numéro international
- * sans « + » ni « 00 » (22890112233).
+ * `local()`/`international()` sont togolais uniquement — utilisés pour le
+ * mobile money (PayGate veut le numéro local à 8 chiffres, AfrikSMS le
+ * numéro international sans « + » ni « 00 », 22890112233) : T-Money/Flooz
+ * n'opèrent que sur le réseau togolais, aucune raison de les faire évoluer.
+ *
+ * `e164()` est la version multi-pays utilisée pour le numéro de *compte*
+ * (inscription, connexion, OTP) — voir App\Services\OtpService.
  */
 class PhoneNumber
 {
@@ -51,5 +58,55 @@ class PhoneNumber
         $local = self::local($phone, $countryCode);
 
         return $local === '' ? '' : $countryCode.$local;
+    }
+
+    /**
+     * Forme E.164 sans « + » (22890112233, 33612345678…), pour un numéro de
+     * *compte* de n'importe quel pays. `$defaultRegion` (indicatif ISO 3166-1
+     * alpha-2, "TG" par défaut) ne s'applique qu'aux saisies sans indicatif
+     * explicite.
+     *
+     * Renvoie une chaîne vide si le numéro n'est pas reconnu comme valide.
+     */
+    public static function e164(?string $phone, string $defaultRegion = 'TG'): string
+    {
+        $raw = trim((string) $phone);
+
+        if ($raw === '') {
+            return '';
+        }
+
+        if (str_starts_with($raw, '+')) {
+            return self::parse($raw, null);
+        }
+
+        $digits = self::digits($raw);
+
+        // Forme historique déjà produite partout avant le support multi-pays
+        // (228 + 8 chiffres) : passthrough pour ne rien casser sur les lignes
+        // déjà en base.
+        if (str_starts_with($digits, self::DEFAULT_COUNTRY_CODE)
+            && strlen($digits) === strlen(self::DEFAULT_COUNTRY_CODE) + 8) {
+            return $digits;
+        }
+
+        return self::parse($digits, $defaultRegion);
+    }
+
+    private static function parse(string $number, ?string $defaultRegion): string
+    {
+        $util = PhoneNumberUtil::getInstance();
+
+        try {
+            $proto = $util->parse($number, $defaultRegion);
+        } catch (NumberParseException) {
+            return '';
+        }
+
+        if (! $util->isValidNumber($proto)) {
+            return '';
+        }
+
+        return ltrim($util->format($proto, PhoneNumberFormat::E164), '+');
     }
 }

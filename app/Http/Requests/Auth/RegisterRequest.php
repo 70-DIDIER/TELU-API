@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Auth;
 
+use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -29,9 +30,22 @@ class RegisterRequest extends FormRequest
             'current_latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'current_longitude' => ['nullable', 'numeric', 'between:-180,180'],
             // Jeton rendu par POST /api/auth/otp/verify ; devient obligatoire
-            // quand OTP_REQUIRED_FOR_REGISTRATION=true.
-            'otp_token' => [config('otp.required_for_registration') ? 'required' : 'nullable', 'string'],
+            // quand OTP_REQUIRED_FOR_REGISTRATION=true — sauf pour un numéro
+            // étranger, qu'AfrikSMS ne peut pas vérifier (voir aussi
+            // AuthController::register(), qui applique la même règle).
+            'otp_token' => [$this->otpRequired() ? 'required' : 'nullable', 'string'],
         ];
+    }
+
+    private function otpRequired(): bool
+    {
+        if (! config('otp.required_for_registration')) {
+            return false;
+        }
+
+        $phone = PhoneNumber::e164((string) $this->input('phone'));
+
+        return str_starts_with($phone, PhoneNumber::DEFAULT_COUNTRY_CODE);
     }
 
     /**

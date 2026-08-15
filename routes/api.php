@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AccountDeletionController;
 use App\Http\Controllers\Api\AddressController;
 use App\Http\Controllers\Api\Admin\AdminDeliveryController;
 use App\Http\Controllers\Api\Admin\AdminJobApplicationController;
@@ -19,7 +20,6 @@ use App\Http\Controllers\Api\Admin\AdminSubscriptionController;
 use App\Http\Controllers\Api\Admin\AdminUserController;
 use App\Http\Controllers\Api\Admin\AdminVendorController;
 use App\Http\Controllers\Api\Admin\AdminWithdrawalController;
-use App\Http\Controllers\Api\AccountDeletionController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverDeliveryController;
@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\RecruiterApplicationController;
 use App\Http\Controllers\Api\RecruiterController;
 use App\Http\Controllers\Api\RecruiterJobOfferController;
 use App\Http\Controllers\Api\ReservationController;
+use App\Http\Controllers\Api\SocialAuthController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Api\VendorOrderController;
@@ -57,6 +58,13 @@ use Illuminate\Support\Facades\Route;
 */
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
+
+// Connexion sociale : le client envoie un jeton déjà obtenu auprès du
+// fournisseur (id_token Google / access_token Facebook), revérifié ici.
+Route::middleware('throttle:20,1')->group(function () {
+    Route::post('/auth/social/google', [SocialAuthController::class, 'google']);
+    Route::post('/auth/social/facebook', [SocialAuthController::class, 'facebook']);
+});
 
 // Vérification du numéro par OTP SMS (AfrikSMS), avant inscription.
 // Le throttle par IP double la limitation par numéro appliquée dans OtpService.
@@ -93,6 +101,11 @@ Route::middleware('auth:sanctum')->group(function () {
     // Vérification par OTP SMS du numéro déjà enregistré sur le compte.
     Route::post('/otp/send', [OtpController::class, 'sendForMe'])->middleware('throttle:10,1');
     Route::post('/otp/verify', [OtpController::class, 'verifyForMe'])->middleware('throttle:10,1');
+
+    // Association d'un numéro à un compte qui n'en a pas encore (connexion
+    // sociale) — voir OtpController::sendPhoneLink / verifyPhoneLink.
+    Route::post('/auth/me/phone/send', [OtpController::class, 'sendPhoneLink'])->middleware('throttle:10,1');
+    Route::post('/auth/me/phone/verify', [OtpController::class, 'verifyPhoneLink'])->middleware('throttle:10,1');
 
     // Vendor profile of the authenticated user.
     Route::get('/vendor', [VendorController::class, 'show']);

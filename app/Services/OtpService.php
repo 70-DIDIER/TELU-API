@@ -34,7 +34,7 @@ class OtpService
      */
     public function issue(string $phone, string $purpose, ?string $ip = null): array
     {
-        $phone = PhoneNumber::international($phone);
+        $phone = PhoneNumber::e164($phone);
 
         if ($phone === '') {
             return ['ok' => false, 'status' => 422, 'message' => 'Numéro de téléphone invalide.'];
@@ -105,7 +105,7 @@ class OtpService
      */
     public function verify(string $phone, string $purpose, string $code): array
     {
-        $phone = PhoneNumber::international($phone);
+        $phone = PhoneNumber::e164($phone);
 
         $otp = OtpCode::where('phone', $phone)
             ->where('purpose', $purpose)
@@ -177,7 +177,7 @@ class OtpService
         }
 
         $otp = OtpCode::where('verification_token', $token)
-            ->where('phone', PhoneNumber::international($phone))
+            ->where('phone', PhoneNumber::e164($phone))
             ->where('purpose', $purpose)
             ->whereNotNull('verified_at')
             ->whereNull('consumed_at')

@@ -27,7 +27,7 @@ class AfrikSms
      */
     public function send(string $phone, string $message): array
     {
-        $mobile = PhoneNumber::international($phone);
+        $mobile = PhoneNumber::e164($phone);
 
         if ($mobile === '') {
             return ['ok' => false, 'message' => 'Numéro de téléphone invalide.'];
@@ -82,7 +82,7 @@ class AfrikSms
     public function sendMany(array $phones, string $message): array
     {
         $mobiles = collect($phones)
-            ->map(fn ($p) => PhoneNumber::international($p))
+            ->map(fn ($p) => PhoneNumber::e164($p))
             ->filter()
             ->unique()
             ->take(500);

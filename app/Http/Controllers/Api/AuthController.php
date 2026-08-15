@@ -8,6 +8,7 @@ use App\Http\Requests\Auth\RegisterRequest;
 use App\Http\Requests\Auth\UpdateMeRequest;
 use App\Models\User;
 use App\Services\OtpService;
+use App\Support\PhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -30,9 +31,26 @@ class AuthController extends Controller
         $otpToken = $data['otp_token'] ?? null;
         unset($data['otp_token']);
 
-        $phoneVerified = $this->otp->redeemRegistrationToken($data['phone'], $otpToken);
+        // Numéro de compte : stocké en E.164 canonique quel que soit le
+        // format saisi (togolais historique ou étranger, cf. PhoneNumber::e164()).
+        $phone = PhoneNumber::e164($data['phone']);
 
-        if (! $phoneVerified && config('otp.required_for_registration')) {
+        if ($phone === '') {
+            throw ValidationException::withMessages([
+                'phone' => ['Numéro de téléphone invalide.'],
+            ]);
+        }
+
+        $data['phone'] = $phone;
+
+        $phoneVerified = $this->otp->redeemRegistrationToken($phone, $otpToken);
+
+        // AfrikSMS ne couvre que le Togo : l'OTP n'est jamais exigé pour un
+        // numéro étranger, quel que soit OTP_REQUIRED_FOR_REGISTRATION (voir
+        // aussi RegisterRequest::rules(), qui applique la même règle).
+        $isTogoNumber = str_starts_with($phone, PhoneNumber::DEFAULT_COUNTRY_CODE);
+
+        if (! $phoneVerified && $isTogoNumber && config('otp.required_for_registration')) {
             throw ValidationException::withMessages([
                 'otp_token' => ['Code de vérification invalide ou expiré. Redemandez un code par SMS.'],
             ]);
@@ -59,9 +77,10 @@ class AuthController extends Controller
     public function login(LoginRequest $request): JsonResponse
     {
         $login = $request->input('login');
-        $field = filter_var($login, FILTER_VALIDATE_EMAIL) ? 'email' : 'phone';
 
-        $user = User::where($field, $login)->first();
+        $user = filter_var($login, FILTER_VALIDATE_EMAIL)
+            ? User::where('email', $login)->first()
+            : User::where('phone', PhoneNumber::e164($login))->first();
 
         if (! $user || ! Hash::check($request->input('password'), $user->password)) {
             throw ValidationException::withMessages([

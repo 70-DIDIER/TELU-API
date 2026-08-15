@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\LinkPhoneRequest;
 use App\Http\Requests\Auth\SendOtpRequest;
+use App\Http\Requests\Auth\VerifyLinkPhoneRequest;
 use App\Http\Requests\Auth\VerifyOtpRequest;
 use App\Models\User;
 use App\Services\OtpService;
@@ -14,11 +16,14 @@ use Illuminate\Http\Request;
 /**
  * Vérification d'un numéro de téléphone par code OTP envoyé en SMS (AfrikSMS).
  *
- * Deux parcours :
+ * Trois parcours :
  *  - public (`purpose = registration`) : avant de créer un compte. La
  *    vérification rend un `verification_token` à passer à /api/auth/register.
  *  - authentifié (`purpose = verification`) : l'utilisateur confirme le numéro
  *    déjà enregistré sur son compte (`is_verified` + `phone_verified_at`).
+ *  - authentifié (`purpose = phone_link`) : un compte créé par connexion
+ *    sociale (sans téléphone) en associe un nouveau — voir sendPhoneLink /
+ *    verifyPhoneLink.
  */
 class OtpController extends Controller
 {
@@ -115,6 +120,64 @@ class OtpController extends Controller
     }
 
     /**
+     * Envoie un code vers un numéro que l'utilisateur connecté (compte social
+     * sans téléphone) souhaite associer à son compte.
+     */
+    public function sendPhoneLink(LinkPhoneRequest $request): JsonResponse
+    {
+        $phone = $request->internationalPhone();
+
+        if ($this->phoneIsTaken($phone)) {
+            return response()->json([
+                'message' => 'Ce numéro est déjà associé à un compte.',
+            ], 409);
+        }
+
+        $result = $this->otp->issue($phone, 'phone_link', $request->ip());
+
+        return $this->respondToIssue($result);
+    }
+
+    /**
+     * Vérifie le code et associe le numéro au compte de l'utilisateur connecté.
+     */
+    public function verifyPhoneLink(VerifyLinkPhoneRequest $request): JsonResponse
+    {
+        $user = $request->user();
+        $data = $request->validated();
+        $phone = PhoneNumber::e164($data['phone']);
+
+        if ($this->phoneIsTaken($phone)) {
+            return response()->json([
+                'message' => 'Ce numéro est déjà associé à un compte.',
+            ], 409);
+        }
+
+        $result = $this->otp->verify($phone, 'phone_link', $data['code']);
+
+        if (! $result['ok']) {
+            return response()->json(
+                array_filter([
+                    'message' => $result['message'],
+                    'attempts_left' => $result['attempts_left'] ?? null,
+                ], fn ($v) => $v !== null),
+                $result['status'] ?? 422
+            );
+        }
+
+        $user->update([
+            'phone' => $phone,
+            'is_verified' => true,
+            'phone_verified_at' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Numéro associé à votre compte.',
+            'user' => $user->fresh(),
+        ]);
+    }
+
+    /**
      * Réponse commune aux deux points d'envoi (succès, quota, panne SMS).
      *
      * @param  array<string, mixed>  $result
@@ -149,12 +212,17 @@ class OtpController extends Controller
      */
     private function phoneIsTaken(string $internationalPhone): bool
     {
-        $local = PhoneNumber::local($internationalPhone);
+        $query = User::query()->where('phone', $internationalPhone);
 
-        return User::query()
-            ->where('phone', $internationalPhone)
-            ->orWhere('phone', $local)
-            ->orWhere('phone', '+'.$internationalPhone)
-            ->exists();
+        // Filet de sécurité pour les anciennes lignes togolaises qui auraient
+        // pu être enregistrées sous une autre forme (locale à 8 chiffres,
+        // avec un "+" superflu) — non pertinent pour un numéro étranger, qui
+        // n'a jamais existé que sous sa forme E.164 canonique.
+        if (str_starts_with($internationalPhone, PhoneNumber::DEFAULT_COUNTRY_CODE)) {
+            $query->orWhere('phone', PhoneNumber::local($internationalPhone))
+                ->orWhere('phone', '+'.$internationalPhone);
+        }
+
+        return $query->exists();
     }
 }

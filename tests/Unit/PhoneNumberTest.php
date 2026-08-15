@@ -28,4 +28,31 @@ class PhoneNumberTest extends TestCase
         $this->assertSame('', PhoneNumber::local(null));
         $this->assertSame('', PhoneNumber::international(''));
     }
+
+    public function test_e164_passes_through_the_legacy_togo_form_unchanged(): void
+    {
+        // Forme historique déjà stockée partout avant le support multi-pays :
+        // ne doit jamais être altérée par le nouveau parsing multi-région.
+        $this->assertSame('22890112233', PhoneNumber::e164('22890112233'));
+    }
+
+    public function test_e164_normalizes_a_bare_togo_number_using_the_default_region(): void
+    {
+        $this->assertSame('22890112233', PhoneNumber::e164('90112233'));
+        $this->assertSame('22890112233', PhoneNumber::e164('90 11 22 33'));
+    }
+
+    public function test_e164_parses_an_explicit_foreign_number(): void
+    {
+        $this->assertSame('33612345678', PhoneNumber::e164('+33612345678'));
+        $this->assertSame('33612345678', PhoneNumber::e164('0033612345678'));
+        $this->assertSame('33612345678', PhoneNumber::e164('+33 6 12 34 56 78'));
+    }
+
+    public function test_e164_rejects_an_invalid_number(): void
+    {
+        $this->assertSame('', PhoneNumber::e164('not-a-phone'));
+        $this->assertSame('', PhoneNumber::e164('123'));
+        $this->assertSame('', PhoneNumber::e164(null));
+    }
 }

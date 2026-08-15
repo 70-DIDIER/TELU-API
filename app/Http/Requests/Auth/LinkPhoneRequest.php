@@ -5,7 +5,11 @@ namespace App\Http\Requests\Auth;
 use App\Support\PhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 
-class SendOtpRequest extends FormRequest
+/**
+ * Envoi d'un code OTP vers un numéro que l'utilisateur connecté (compte créé
+ * par connexion sociale, sans téléphone) souhaite associer à son compte.
+ */
+class LinkPhoneRequest extends FormRequest
 {
     public function authorize(): bool
     {

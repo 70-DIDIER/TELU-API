@@ -26,7 +26,9 @@ class AuthTest extends TestCase
             ->assertJsonStructure(['user' => ['id', 'full_name', 'user_type'], 'token'])
             ->assertJsonPath('user.user_type', 'client');
 
-        $this->assertDatabaseHas('users', ['phone' => '90112233', 'user_type' => 'client']);
+        // Stocké en E.164 canonique (228 + 8 chiffres) quel que soit le format
+        // saisi — voir App\Support\PhoneNumber::e164().
+        $this->assertDatabaseHas('users', ['phone' => '22890112233', 'user_type' => 'client']);
     }
 
     public function test_register_rejects_a_duplicate_phone(): void
@@ -67,7 +69,9 @@ class AuthTest extends TestCase
 
     public function test_login_accepts_a_phone(): void
     {
-        $user = User::factory()->create(['phone' => '91223344']);
+        // Stockage canonique E.164 (228 + 8 chiffres) — la connexion se fait
+        // avec le numéro local, normalisé côté serveur avant la recherche.
+        $user = User::factory()->create(['phone' => '22891223344']);
 
         $this->postJson('/api/auth/login', [
             'login' => '91223344',
@@ -77,7 +81,7 @@ class AuthTest extends TestCase
 
     public function test_login_rejects_a_wrong_password(): void
     {
-        User::factory()->create(['phone' => '91223344']);
+        User::factory()->create(['phone' => '22891223344']);
 
         $this->postJson('/api/auth/login', [
             'login' => '91223344',
@@ -87,7 +91,7 @@ class AuthTest extends TestCase
 
     public function test_login_rejects_a_suspended_account(): void
     {
-        User::factory()->create(['phone' => '91223344', 'status' => 'suspended']);
+        User::factory()->create(['phone' => '22891223344', 'status' => 'suspended']);
 
         $this->postJson('/api/auth/login', [
             'login' => '91223344',
