@@ -23,6 +23,9 @@ class PropertyOwnerProfileRequest extends FormRequest
             'owner_type' => [$required, Rule::in(['individual', 'hotel'])],
             // A hotel must carry a name; an individual owner may omit it.
             'company_name' => ['nullable', 'required_if:owner_type,hotel', 'string', 'max:255'],
+            'id_number' => ['nullable', 'string', 'max:255'],
+            'id_document_url' => ['nullable', 'string', 'max:2048'],
+            'ownership_proof_url' => ['nullable', 'string', 'max:2048'],
         ];
     }
 }

@@ -44,6 +44,7 @@ use App\Http\Controllers\Api\RecruiterJobOfferController;
 use App\Http\Controllers\Api\ReservationController;
 use App\Http\Controllers\Api\SocialAuthController;
 use App\Http\Controllers\Api\SubscriptionController;
+use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Api\VendorOrderController;
 use App\Http\Controllers\Api\VendorProductController;
@@ -106,6 +107,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // sociale) — voir OtpController::sendPhoneLink / verifyPhoneLink.
     Route::post('/auth/me/phone/send', [OtpController::class, 'sendPhoneLink'])->middleware('throttle:10,1');
     Route::post('/auth/me/phone/verify', [OtpController::class, 'verifyPhoneLink'])->middleware('throttle:10,1');
+
+    // Generic image upload (product photos, verification documents, avatars) — returns a public URL.
+    Route::post('/uploads', [UploadController::class, 'store']);
 
     // Vendor profile of the authenticated user.
     Route::get('/vendor', [VendorController::class, 'show']);

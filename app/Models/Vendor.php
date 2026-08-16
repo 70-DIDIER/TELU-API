@@ -18,6 +18,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'latitude',
     'longitude',
     'is_active',
+    'id_number',
+    'id_document_url',
+    'rccm_number',
+    'rccm_document_url',
 ])]
 class Vendor extends Model
 {

@@ -18,6 +18,9 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
     'subscription_id',
     'subscription_started_at',
     'subscription_expires_at',
+    'id_number',
+    'id_document_url',
+    'ownership_proof_url',
 ])]
 class PropertyOwner extends Model
 {

@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'is_available',
     'current_latitude',
     'current_longitude',
+    'id_document_url',
+    'vehicle_photo_url',
 ])]
 class Driver extends Model
 {

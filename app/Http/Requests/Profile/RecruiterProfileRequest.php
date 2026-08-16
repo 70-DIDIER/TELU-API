@@ -19,6 +19,10 @@ class RecruiterProfileRequest extends FormRequest
         return [
             'company_name' => ['nullable', 'string', 'max:255'],
             'industry' => ['nullable', 'string', 'max:255'],
+            'id_number' => ['nullable', 'string', 'max:255'],
+            'id_document_url' => ['nullable', 'string', 'max:2048'],
+            'rccm_number' => ['nullable', 'string', 'max:255'],
+            'company_document_url' => ['nullable', 'string', 'max:2048'],
         ];
     }
 }

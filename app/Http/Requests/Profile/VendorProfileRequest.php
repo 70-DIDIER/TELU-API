@@ -24,6 +24,10 @@ class VendorProfileRequest extends FormRequest
             'address' => ['nullable', 'string', 'max:255'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'id_number' => ['nullable', 'string', 'max:255'],
+            'id_document_url' => ['nullable', 'string', 'max:2048'],
+            'rccm_number' => ['nullable', 'string', 'max:255'],
+            'rccm_document_url' => ['nullable', 'string', 'max:2048'],
         ];
     }
 }

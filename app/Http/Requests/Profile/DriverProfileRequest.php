@@ -25,6 +25,8 @@ class DriverProfileRequest extends FormRequest
             'is_available' => ['boolean'],
             'current_latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'current_longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'id_document_url' => ['nullable', 'string', 'max:2048'],
+            'vehicle_photo_url' => ['nullable', 'string', 'max:2048'],
         ];
     }
 }

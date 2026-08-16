@@ -18,6 +18,10 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
     'subscription_id',
     'subscription_started_at',
     'subscription_expires_at',
+    'id_number',
+    'id_document_url',
+    'rccm_number',
+    'company_document_url',
 ])]
 class Recruiter extends Model
 {
