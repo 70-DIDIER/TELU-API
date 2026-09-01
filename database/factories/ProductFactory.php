@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Product;
 use App\Models\Vendor;
+use App\Support\TogoCatalog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -16,17 +17,18 @@ class ProductFactory extends Factory
      */
     public function definition(): array
     {
+        $product = TogoCatalog::product();
+
         return [
             'vendor_id' => Vendor::factory(),
-            'name' => fake()->words(3, true),
+            'name' => $product['name'],
             'description' => fake()->optional()->sentence(),
             'price' => fake()->randomFloat(2, 100, 50000),
-            'category' => fake()->randomElement(['food', 'drinks', 'grocery', 'electronics', 'fashion']),
-            // Lorem Picsum (fiable, images photo réalistes) plutôt que le
-            // imageUrl() de Faker (déprécié, pointe vers via.placeholder.com qui
-            // est régulièrement indisponible) — seed unique = image stable et
-            // toujours présente pour tester le rendu du catalogue.
-            'image_url' => 'https://picsum.photos/seed/'.fake()->uuid().'/800/600',
+            'category' => $product['category'],
+            // Vraie photo du produit (Wikimedia Commons, résolue par nom dans
+            // TogoCatalog) plutôt qu'une image Lorem Picsum aléatoire sans
+            // rapport avec ce qui est vendu.
+            'image_url' => $product['image_url'],
             'stock' => fake()->numberBetween(0, 200),
             'is_available' => fake()->boolean(90),
         ];

@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\Order;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\TogoCatalog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -24,7 +25,7 @@ class OrderFactory extends Factory
                 'pending', 'accepted', 'preparing', 'in_delivery', 'delivered', 'cancelled',
             ]),
             'total_amount' => fake()->randomFloat(2, 500, 100000),
-            'delivery_address' => fake()->streetAddress(),
+            'delivery_address' => TogoCatalog::address(),
             'delivery_latitude' => fake()->latitude(6.1, 6.25),
             'delivery_longitude' => fake()->longitude(1.1, 1.35),
         ];

@@ -20,6 +20,7 @@ class VendorProfileRequest extends FormRequest
 
         return [
             'shop_name' => [$required, 'string', 'max:255'],
+            'logo_url' => ['nullable', 'string', 'max:2048'],
             'description' => ['nullable', 'string'],
             'address' => ['nullable', 'string', 'max:255'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],

@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\User;
+use App\Support\TogoCatalog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -25,7 +26,7 @@ class UserFactory extends Factory
     public function definition(): array
     {
         return [
-            'full_name' => fake()->name(),
+            'full_name' => TogoCatalog::fullName(),
             'email' => fake()->unique()->safeEmail(),
             'phone' => fake()->unique()->numerify('+228 9# ## ## ##'),
             // Portraits réalistes via pravatar.cc ; 25% de null conservés pour

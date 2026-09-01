@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'price',
     'category',
     'image_url',
+    'image_urls',
     'stock',
     'is_available',
 ])]

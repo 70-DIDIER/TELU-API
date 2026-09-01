@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\JobOffer;
 use App\Models\Recruiter;
+use App\Support\TogoCatalog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,9 +19,9 @@ class JobOfferFactory extends Factory
     {
         return [
             'recruiter_id' => Recruiter::factory(),
-            'title' => fake()->jobTitle(),
+            'title' => TogoCatalog::jobTitle(),
             'description' => fake()->optional()->paragraph(),
-            'location' => fake()->city(),
+            'location' => TogoCatalog::city(),
             'latitude' => fake()->latitude(6.1, 6.25),
             'longitude' => fake()->longitude(1.1, 1.35),
             'daily_rate' => fake()->randomFloat(2, 2000, 30000),

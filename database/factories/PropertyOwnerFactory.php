@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\PropertyOwner;
 use App\Models\User;
+use App\Support\TogoCatalog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -21,7 +22,7 @@ class PropertyOwnerFactory extends Factory
         return [
             'user_id' => User::factory()->type('property_owner'),
             'owner_type' => $ownerType,
-            'company_name' => $ownerType === 'hotel' ? fake()->company() : null,
+            'company_name' => $ownerType === 'hotel' ? TogoCatalog::companyName() : null,
         ];
     }
 }

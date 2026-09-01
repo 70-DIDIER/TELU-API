@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\User;
 use App\Models\Vendor;
+use App\Support\TogoCatalog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,9 +19,9 @@ class VendorFactory extends Factory
     {
         return [
             'user_id' => User::factory()->type('vendor'),
-            'shop_name' => fake()->company(),
+            'shop_name' => TogoCatalog::shopName(),
             'description' => fake()->optional()->sentence(),
-            'address' => fake()->streetAddress(),
+            'address' => TogoCatalog::address(),
             'latitude' => fake()->latitude(6.1, 6.25),
             'longitude' => fake()->longitude(1.1, 1.35),
             'is_active' => fake()->boolean(85),

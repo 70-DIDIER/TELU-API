@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Driver;
 use App\Models\User;
+use App\Support\TogoCatalog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -20,7 +21,7 @@ class DriverFactory extends Factory
             'user_id' => User::factory()->type('driver'),
             'vehicle_type' => fake()->randomElement(['moto', 'tricycle', 'car', 'van']),
             'license_number' => fake()->optional()->bothify('??-####'),
-            'coverage_zone' => fake()->optional()->city(),
+            'coverage_zone' => fake()->optional()->passthrough(TogoCatalog::lomeQuartier()),
             'is_available' => fake()->boolean(70),
             'current_latitude' => fake()->latitude(6.1, 6.25),
             'current_longitude' => fake()->longitude(1.1, 1.35),

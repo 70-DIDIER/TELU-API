@@ -24,6 +24,7 @@ class ProductRequest extends FormRequest
             'price' => [$required, 'numeric', 'min:0'],
             'category' => ['nullable', 'string', 'max:255'],
             'image_url' => ['nullable', 'string', 'max:255'],
+            'image_urls' => ['nullable', 'string'],
             'stock' => ['nullable', 'integer', 'min:0'],
             'is_available' => ['boolean'],
         ];

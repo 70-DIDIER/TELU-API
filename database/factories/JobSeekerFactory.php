@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\JobSeeker;
 use App\Models\User;
+use App\Support\TogoCatalog;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -18,7 +19,7 @@ class JobSeekerFactory extends Factory
     {
         return [
             'user_id' => User::factory()->type('job_seeker'),
-            'profession' => fake()->jobTitle(),
+            'profession' => TogoCatalog::jobTitle(),
             'skills' => fake()->optional()->words(5, true),
             'experience' => fake()->optional()->sentence(),
             'availability' => fake()->randomElement(['immediate', 'within a week', 'within a month']),

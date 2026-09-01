@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'user_id',
     'shop_name',
+    'logo_url',
     'description',
     'address',
     'latitude',
