@@ -3,15 +3,20 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\AppleLoginRequest;
 use App\Http\Requests\Auth\FacebookLoginRequest;
 use App\Http\Requests\Auth\GoogleLoginRequest;
 use App\Models\User;
+use Firebase\JWT\JWK;
+use Firebase\JWT\JWT;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
- * Connexion / inscription via Google et Facebook.
+ * Connexion / inscription via Google, Facebook et Apple.
  *
  * Le client mobile fait l'échange OAuth lui-même (expo-auth-session) et
  * n'envoie au serveur que le jeton obtenu — jamais de mot de passe. Le
@@ -70,6 +75,32 @@ class SocialAuthController extends Controller
             emailVerified: isset($profile['email']),
             fullName: $profile['name'] ?? 'Utilisateur Facebook',
             avatar: $profile['picture']['data']['url'] ?? null,
+            userType: $data['user_type'] ?? null,
+        );
+
+        return $this->respondWithSession($user, $request->input('device_name', 'api'));
+    }
+
+    /**
+     * Échange un identity_token Apple (Sign In with Apple, iOS uniquement)
+     * contre une session TELU.
+     */
+    public function apple(AppleLoginRequest $request): JsonResponse
+    {
+        $data = $request->validated();
+        $claims = $this->verifyAppleIdentityToken($data['identity_token']);
+
+        $emailVerified = in_array($claims['email_verified'] ?? false, [true, 'true', '1'], true);
+
+        $user = $this->findOrCreateUser(
+            provider: 'apple',
+            providerId: (string) $claims['sub'],
+            email: $claims['email'] ?? null,
+            emailVerified: $emailVerified,
+            // Apple ne renvoie le nom complet qu'à la toute première autorisation
+            // (le client le transmet dans `full_name`) ; absent ensuite.
+            fullName: $data['full_name'] ?? ($claims['email'] ?? 'Utilisateur Apple'),
+            avatar: null,
             userType: $data['user_type'] ?? null,
         );
 
@@ -168,6 +199,50 @@ class SocialAuthController extends Controller
     }
 
     /**
+     * Valide l'identity_token Apple : contrairement à Google/Facebook, Apple
+     * n'expose aucun endpoint de vérification en ligne — la signature JWT est
+     * vérifiée localement via les clés publiques JWKS d'Apple (mises en cache
+     * 24h), puis l'émetteur, l'audience (bundle ID de l'app) et l'expiration
+     * sont contrôlés avant de faire confiance aux claims (sub, email…).
+     *
+     * @return array<string, mixed>
+     */
+    private function verifyAppleIdentityToken(string $identityToken): array
+    {
+        try {
+            $keys = Cache::remember('apple_jwks', now()->addDay(), function () {
+                $response = Http::timeout(10)->get('https://appleid.apple.com/auth/keys');
+                $response->throw();
+
+                return $response->json();
+            });
+
+            JWT::$leeway = 30;
+            $claims = (array) JWT::decode($identityToken, JWK::parseKeySet($keys));
+        } catch (Throwable) {
+            throw ValidationException::withMessages([
+                'identity_token' => ['Jeton Apple invalide ou expiré.'],
+            ]);
+        }
+
+        if (($claims['iss'] ?? null) !== 'https://appleid.apple.com') {
+            throw ValidationException::withMessages([
+                'identity_token' => ['Jeton Apple invalide (émetteur incorrect).'],
+            ]);
+        }
+
+        $allowedClientIds = config('services.apple.client_ids');
+
+        if ($allowedClientIds !== [] && ! in_array($claims['aud'] ?? null, $allowedClientIds, true)) {
+            throw ValidationException::withMessages([
+                'identity_token' => ["Ce jeton Apple n'a pas été émis pour cette application."],
+            ]);
+        }
+
+        return $claims;
+    }
+
+    /**
      * Retrouve (par provider+provider_id, puis par email déjà vérifié par le
      * fournisseur) ou crée le compte correspondant à cette identité sociale.
      */
@@ -192,6 +267,16 @@ class SocialAuthController extends Controller
 
         if ($user) {
             return $user;
+        }
+
+        // L'email peut être pris par un compte lié à un AUTRE fournisseur (ou
+        // par un compte classique dont l'email n'a pas été vérifié ci-dessus) :
+        // sans ce garde-fou, le create() plus bas violerait la contrainte
+        // UNIQUE sur `email` et planterait en 500 au lieu d'une erreur propre.
+        if ($email && User::where('email', $email)->exists()) {
+            throw ValidationException::withMessages([
+                'email' => ['Un compte existe déjà avec cette adresse email. Connectez-vous avec la méthode utilisée à l’inscription.'],
+            ]);
         }
 
         return User::create([

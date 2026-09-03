@@ -65,6 +65,7 @@ Route::post('/auth/login', [AuthController::class, 'login']);
 Route::middleware('throttle:20,1')->group(function () {
     Route::post('/auth/social/google', [SocialAuthController::class, 'google']);
     Route::post('/auth/social/facebook', [SocialAuthController::class, 'facebook']);
+    Route::post('/auth/social/apple', [SocialAuthController::class, 'apple']);
 });
 
 // Vérification du numéro par OTP SMS (AfrikSMS), avant inscription.

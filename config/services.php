@@ -88,4 +88,21 @@ return [
         'app_secret' => env('FACEBOOK_APP_SECRET'),
     ],
 
+    /*
+    | Connexion sociale — Apple ("Sign In with Apple", iOS uniquement). Le
+    | client mobile envoie l'`identity_token` (JWT) rendu par
+    | expo-apple-authentication ; contrairement à Google/Facebook, Apple
+    | n'expose aucun endpoint de vérification en ligne : le serveur valide
+    | la signature localement via les clés publiques JWKS d'Apple
+    | (https://appleid.apple.com/auth/keys) et vérifie que `aud` correspond
+    | à l'identifiant de bundle de l'app déclaré ici.
+    | Voir SocialAuthController::apple().
+    */
+    'apple' => [
+        'client_ids' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('APPLE_CLIENT_IDS', ''))
+        ))),
+    ],
+
 ];
