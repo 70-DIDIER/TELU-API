@@ -95,11 +95,13 @@ class MessageController extends Controller
             'is_read' => false,
         ]);
 
-        // Notify the receiver of the new message.
+        // Notify the receiver of the new message (push payload carries enough
+        // to deep-link straight into the thread with the sender).
         Notifier::send(
             $message->receiver_id,
             'message',
-            'Vous avez reçu un nouveau message.'
+            $request->user()->full_name.' vous a envoyé un message.',
+            ['sender_id' => $request->user()->id, 'sender_name' => $request->user()->full_name]
         );
 
         return response()->json($message, 201);
