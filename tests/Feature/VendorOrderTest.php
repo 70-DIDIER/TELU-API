@@ -191,4 +191,51 @@ class VendorOrderTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.status', 'pending');
     }
+
+    public function test_the_customer_is_notified_of_each_vendor_transition(): void
+    {
+        $order = $this->pendingOrder($this->product());
+
+        $this->patchJson("/api/vendor/orders/{$order->id}/status", ['status' => 'accepted'])->assertOk();
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $order->customer_id,
+            'type' => 'order',
+            'message' => 'Votre commande a été acceptée par le vendeur.',
+        ]);
+    }
+
+    public function test_cancelling_an_accepted_order_closes_its_delivery_and_warns_the_driver(): void
+    {
+        $order = $this->pendingOrder($this->product());
+        $this->patchJson("/api/vendor/orders/{$order->id}/status", ['status' => 'accepted'])->assertOk();
+
+        // A driver claimed it before the vendor changed their mind.
+        $driver = Driver::factory()->create();
+        $order->delivery->update(['driver_id' => $driver->id, 'status' => 'assigned', 'assigned_at' => now()]);
+
+        $this->patchJson("/api/vendor/orders/{$order->id}/status", ['status' => 'cancelled'])->assertOk();
+
+        $this->assertSame('cancelled', $order->delivery->fresh()->status);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $driver->user_id,
+            'type' => 'delivery',
+            'message' => 'La commande que vous deviez livrer a été annulée par le vendeur.',
+        ]);
+    }
+
+    public function test_a_cancelled_order_leaves_the_drivers_pool(): void
+    {
+        $order = $this->pendingOrder($this->product());
+        $this->patchJson("/api/vendor/orders/{$order->id}/status", ['status' => 'accepted'])->assertOk();
+        $this->patchJson("/api/vendor/orders/{$order->id}/status", ['status' => 'cancelled'])->assertOk();
+
+        $driverUser = User::factory()->type('driver')->create();
+        Driver::factory()->create(['user_id' => $driverUser->id]);
+        Sanctum::actingAs($driverUser);
+
+        $this->getJson('/api/driver/deliveries/available')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
 }

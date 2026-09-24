@@ -147,7 +147,7 @@ class DatabaseSeeder extends Seeder
 
         // --- Commerce: vendors -> products -> orders -> items/delivery/payment
         collect(range(1, 8))->each(function () use ($clients, $drivers) {
-            $vendor = Vendor::factory()->create();
+            $vendor = Vendor::factory()->create(['is_active' => fake()->boolean(85)]);
 
             $products = Product::factory()
                 ->count(fake()->numberBetween(4, 10))

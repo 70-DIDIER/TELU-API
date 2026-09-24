@@ -23,7 +23,9 @@ class PaymentFactory extends Factory
             'amount' => fake()->randomFloat(2, 500, 100000),
             'payment_method' => fake()->randomElement(['flooz', 'tmoney']),
             'reference_type' => 'order',
-            'reference_id' => Order::factory(),
+            // Never a cancelled order: a payment succeeding on one is flagged
+            // refunded (PaymentController::applyGatewayStatus()).
+            'reference_id' => Order::factory()->state(['status' => 'pending']),
             'status' => fake()->randomElement(['pending', 'success', 'failed', 'refunded']),
             'transaction_id' => fake()->optional()->uuid(),
             'identifier' => 'TELU-'.strtoupper(Str::random(12)),

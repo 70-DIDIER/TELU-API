@@ -82,4 +82,27 @@ class ProductCatalogueTest extends TestCase
 
         $this->getJson("/api/products/{$product->id}")->assertNotFound();
     }
+
+    public function test_products_of_a_suspended_vendor_are_hidden(): void
+    {
+        $product = Product::factory()->create([
+            'is_available' => true,
+            'vendor_id' => Vendor::factory()->inactive(),
+        ]);
+
+        $this->getJson('/api/products')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson("/api/products/{$product->id}")->assertNotFound();
+    }
+
+    public function test_out_of_stock_and_moderated_products_are_hidden(): void
+    {
+        Product::factory()->create(['is_available' => true, 'stock' => 0]);
+        Product::factory()->create(['is_available' => true, 'blocked_at' => now()]);
+        $visible = Product::factory()->create(['is_available' => true]);
+
+        $this->getJson('/api/products')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $visible->id);
+    }
 }

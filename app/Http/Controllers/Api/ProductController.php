@@ -10,14 +10,14 @@ use Illuminate\Http\Request;
 class ProductController extends Controller
 {
     /**
-     * Browse/search the public catalogue of available products.
+     * Browse/search the public catalogue of listed products (see Product::scopeListed()).
      *
      * Supported query params: search, category, vendor_id, min_price, max_price.
      */
     public function index(Request $request): JsonResponse
     {
         $products = Product::query()
-            ->where('is_available', true)
+            ->listed()
             ->with('vendor:id,shop_name,latitude,longitude')
             ->when($request->filled('search'), fn ($q) => $q->where('name', 'like', '%'.$request->string('search').'%'))
             ->when($request->filled('category'), fn ($q) => $q->where('category', $request->string('category')))
@@ -37,7 +37,7 @@ class ProductController extends Controller
     public function show(string $product): JsonResponse
     {
         $found = Product::query()
-            ->where('is_available', true)
+            ->listed()
             ->with('vendor:id,shop_name,description,address,latitude,longitude')
             ->find($product);
 

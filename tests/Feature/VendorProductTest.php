@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
@@ -87,5 +89,33 @@ class VendorProductTest extends TestCase
         $this->deleteJson("/api/vendor/products/{$product->id}")->assertOk();
 
         $this->assertDatabaseMissing('products', ['id' => $product->id]);
+    }
+
+    public function test_an_ordered_product_cannot_be_deleted(): void
+    {
+        $product = Product::factory()->create(['vendor_id' => $this->vendor->id]);
+        OrderItem::factory()->create([
+            'order_id' => Order::factory()->create(['vendor_id' => $this->vendor->id])->id,
+            'product_id' => $product->id,
+        ]);
+
+        $this->deleteJson("/api/vendor/products/{$product->id}")->assertConflict();
+
+        $this->assertDatabaseHas('products', ['id' => $product->id]);
+    }
+
+    public function test_a_product_taken_down_by_an_admin_cannot_be_re_enabled_by_the_vendor(): void
+    {
+        $product = Product::factory()->create([
+            'vendor_id' => $this->vendor->id,
+            'is_available' => false,
+            'blocked_at' => now(),
+        ]);
+
+        $this->putJson("/api/vendor/products/{$product->id}", ['is_available' => true])->assertForbidden();
+        $this->assertFalse($product->fresh()->is_available);
+
+        // Other edits remain possible.
+        $this->putJson("/api/vendor/products/{$product->id}", ['price' => 1500])->assertOk();
     }
 }

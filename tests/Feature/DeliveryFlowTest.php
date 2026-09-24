@@ -293,4 +293,28 @@ class DeliveryFlowTest extends TestCase
         $this->assertDatabaseHas('orders', ['id' => $orderId, 'status' => 'delivered']);
         $this->assertDatabaseHas('deliveries', ['id' => $deliveryId, 'status' => 'delivered']);
     }
+
+    public function test_pickup_is_refused_when_the_order_was_cancelled(): void
+    {
+        $order = Order::factory()->create(['status' => 'cancelled']);
+        $delivery = Delivery::factory()->create([
+            'order_id' => $order->id,
+            'driver_id' => $this->driver->id,
+            'status' => 'assigned',
+            'assigned_at' => now(),
+        ]);
+
+        $this->postJson("/api/driver/deliveries/{$delivery->id}/pickup")->assertUnprocessable();
+
+        // The cancelled order is never revived into in_delivery.
+        $this->assertSame('cancelled', $order->fresh()->status);
+        $this->assertSame('assigned', $delivery->fresh()->status);
+    }
+
+    public function test_a_cancelled_delivery_cannot_be_claimed(): void
+    {
+        $delivery = Delivery::factory()->create(['status' => 'cancelled']);
+
+        $this->postJson("/api/driver/deliveries/{$delivery->id}/claim")->assertUnprocessable();
+    }
 }

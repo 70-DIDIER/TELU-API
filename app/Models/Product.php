@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -19,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'image_urls',
     'stock',
     'is_available',
+    'blocked_at',
 ])]
 class Product extends Model
 {
@@ -33,7 +35,22 @@ class Product extends Model
             'price' => 'decimal:2',
             'stock' => 'integer',
             'is_available' => 'boolean',
+            'blocked_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Products shown in the public catalogue: enabled by the vendor, not taken
+     * down by an admin, in stock, and sold by a vendor that is not suspended.
+     *
+     * @param  Builder<Product>  $query
+     */
+    public function scopeListed(Builder $query): void
+    {
+        $query->where('is_available', true)
+            ->whereNull('blocked_at')
+            ->where('stock', '>', 0)
+            ->whereHas('vendor', fn (Builder $q) => $q->where('is_active', true));
     }
 
     public function vendor(): BelongsTo
