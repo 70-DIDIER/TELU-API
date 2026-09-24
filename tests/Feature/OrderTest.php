@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Api\OrderController;
 use App\Models\Order;
+use App\Models\Payment;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Vendor;
@@ -174,5 +175,66 @@ class OrderTest extends TestCase
             ->assertJsonPath('data.0.id', $mine->id);
 
         $this->getJson("/api/orders/{$foreign->id}")->assertNotFound();
+    }
+
+    public function test_a_suspended_vendor_does_not_take_orders(): void
+    {
+        $product = $this->product();
+        $this->vendor->update(['is_active' => false]);
+
+        $this->postJson('/api/orders', [
+            'vendor_id' => $this->vendor->id,
+            'delivery_address' => 'Lomé, Bè',
+            'items' => [['product_id' => $product->id, 'quantity' => 1]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('vendor_id');
+
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    public function test_the_customer_can_cancel_a_pending_order(): void
+    {
+        $order = Order::factory()->create([
+            'vendor_id' => $this->vendor->id,
+            'customer_id' => $this->client->id,
+            'status' => 'pending',
+        ]);
+        $payment = Payment::factory()->create([
+            'user_id' => $this->client->id,
+            'reference_type' => 'order',
+            'reference_id' => $order->id,
+            'status' => 'success',
+        ]);
+
+        $this->postJson("/api/orders/{$order->id}/cancel")
+            ->assertOk()
+            ->assertJsonPath('status', 'cancelled');
+
+        $this->assertSame('refunded', $payment->fresh()->status);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->vendor->user_id,
+            'type' => 'order',
+        ]);
+    }
+
+    public function test_an_order_accepted_by_the_vendor_cannot_be_cancelled_by_the_customer(): void
+    {
+        $order = Order::factory()->create([
+            'vendor_id' => $this->vendor->id,
+            'customer_id' => $this->client->id,
+            'status' => 'accepted',
+        ]);
+
+        $this->postJson("/api/orders/{$order->id}/cancel")->assertUnprocessable();
+
+        $this->assertSame('accepted', $order->fresh()->status);
+    }
+
+    public function test_a_customer_cannot_cancel_someone_elses_order(): void
+    {
+        $order = Order::factory()->create(['status' => 'pending']);
+
+        $this->postJson("/api/orders/{$order->id}/cancel")->assertNotFound();
+
+        $this->assertSame('pending', $order->fresh()->status);
     }
 }

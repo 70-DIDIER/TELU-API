@@ -24,7 +24,15 @@ class VendorFactory extends Factory
             'address' => TogoCatalog::address(),
             'latitude' => fake()->latitude(6.1, 6.25),
             'longitude' => fake()->longitude(1.1, 1.35),
-            'is_active' => fake()->boolean(85),
+            'is_active' => true,
         ];
+    }
+
+    /**
+     * A vendor suspended by an admin.
+     */
+    public function inactive(): static
+    {
+        return $this->state(fn () => ['is_active' => false]);
     }
 }

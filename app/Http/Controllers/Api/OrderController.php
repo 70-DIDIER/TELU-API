@@ -120,6 +120,46 @@ class OrderController extends Controller
     }
 
     /**
+     * Cancel one of the authenticated customer's orders. Only allowed while the
+     * vendor has not accepted it yet (pending): no stock is held and no
+     * delivery exists at that point. A payment already made is flagged
+     * refunded, and the vendor is notified.
+     */
+    public function cancel(Request $request, string $order): JsonResponse
+    {
+        $cancelled = DB::transaction(function () use ($request, $order) {
+            $found = $request->user()->orders()->lockForUpdate()->find($order);
+
+            if (! $found) {
+                return null;
+            }
+
+            if ($found->status !== 'pending') {
+                throw ValidationException::withMessages([
+                    'status' => ['Seule une commande en attente (pas encore acceptée par le vendeur) peut être annulée.'],
+                ]);
+            }
+
+            $found->update(['status' => 'cancelled']);
+            CommerceLedger::refundIfPaid($found);
+
+            return $found;
+        });
+
+        if ($cancelled === null) {
+            return response()->json(['message' => 'Commande introuvable.'], 404);
+        }
+
+        Notifier::send(
+            $cancelled->vendor->user_id,
+            'order',
+            'Une commande a été annulée par le client.'
+        );
+
+        return response()->json($cancelled->fresh());
+    }
+
+    /**
      * Place a new order. The total is computed server-side from the current
      * product prices; every item must belong to the same vendor, be available
      * and be in stock.
@@ -130,6 +170,13 @@ class OrderController extends Controller
 
         $order = DB::transaction(function () use ($request, $data) {
             $vendor = Vendor::find($data['vendor_id']);
+
+            // A vendor suspended by an admin no longer takes orders.
+            if (! $vendor?->is_active) {
+                throw ValidationException::withMessages([
+                    'vendor_id' => ['Cette boutique est actuellement indisponible.'],
+                ]);
+            }
 
             // Load only the requested products that actually belong to the vendor.
             $requestedIds = collect($data['items'])->pluck('product_id')->unique();
@@ -153,7 +200,7 @@ class OrderController extends Controller
                     ]);
                 }
 
-                if (! $product->is_available) {
+                if (! $product->is_available || $product->blocked_at !== null) {
                     throw ValidationException::withMessages([
                         'items' => ["Le produit « {$product->name} » n'est pas disponible."],
                     ]);

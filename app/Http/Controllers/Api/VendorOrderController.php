@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\UpdateOrderStatusRequest;
 use App\Models\Driver;
 use App\Models\Order;
-use App\Models\Payment;
 use App\Models\Setting;
 use App\Models\Vendor;
+use App\Services\CommerceLedger;
 use App\Services\Notifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,6 +34,17 @@ class VendorOrderController extends Controller
      * @var list<string>
      */
     private const STOCK_HELD = ['accepted', 'preparing', 'in_delivery', 'delivered'];
+
+    /**
+     * What the customer is told after each vendor-driven transition.
+     *
+     * @var array<string, string>
+     */
+    private const CUSTOMER_MESSAGES = [
+        'accepted' => 'Votre commande a été acceptée par le vendeur.',
+        'preparing' => 'Votre commande est en cours de préparation.',
+        'cancelled' => 'Votre commande a été annulée par le vendeur.',
+    ];
 
     /**
      * List the orders received by the authenticated vendor (optional ?status=).
@@ -79,7 +90,9 @@ class VendorOrderController extends Controller
 
     /**
      * Move one of the vendor's orders to a new status, adjusting stock when the
-     * order is accepted (deduct) or cancelled after acceptance (restore).
+     * order is accepted (deduct) or cancelled after acceptance (restore). A
+     * cancellation also closes the delivery and flags a paid order refunded;
+     * the customer is notified of every transition.
      */
     public function updateStatus(UpdateOrderStatusRequest $request, string $order): JsonResponse
     {
@@ -113,10 +126,17 @@ class VendorOrderController extends Controller
                 if (\in_array($found->status, self::STOCK_HELD, true)) {
                     $this->restoreStock($found);
                 }
-                $this->refundIfPaid($found);
+                $this->cancelDelivery($found);
+                CommerceLedger::refundIfPaid($found);
             }
 
             $found->update(['status' => $target]);
+
+            Notifier::send(
+                $found->customer_id,
+                'order',
+                self::CUSTOMER_MESSAGES[$target]
+            );
 
             return $found;
         });
@@ -153,35 +173,6 @@ class VendorOrderController extends Controller
     }
 
     /**
-     * Flag any successful payment for a cancelled order as refunded and notify
-     * the customer. The actual mobile-money disbursement is processed out of
-     * band by an admin (same manual flow as withdrawals); this closes the audit
-     * trail so a paid-then-refused order never silently keeps the customer's
-     * money. Safe here because a cancellable order is never wallet-settled
-     * (settlement only happens at 'delivered').
-     */
-    private function refundIfPaid(Order $order): void
-    {
-        $payment = Payment::query()
-            ->where('reference_type', 'order')
-            ->where('reference_id', $order->id)
-            ->where('status', 'success')
-            ->first();
-
-        if (! $payment) {
-            return;
-        }
-
-        $payment->update(['status' => 'refunded']);
-
-        Notifier::send(
-            $order->customer_id,
-            'payment',
-            "Votre commande a été annulée. Le remboursement de {$payment->amount} FCFA est en cours de traitement."
-        );
-    }
-
-    /**
      * Give back the ordered quantities to stock.
      */
     private function restoreStock(Order $order): void
@@ -190,6 +181,31 @@ class VendorOrderController extends Controller
 
         foreach ($order->items as $item) {
             $item->product?->increment('stock', $item->quantity);
+        }
+    }
+
+    /**
+     * Close the delivery opened at acceptance, so it leaves the drivers' pool
+     * (or the assigned driver's list), and warn the driver if one had claimed
+     * it. Only reachable before pickup: an order in_delivery is no longer
+     * cancellable by the vendor.
+     */
+    private function cancelDelivery(Order $order): void
+    {
+        $delivery = $order->delivery()->with('driver')->lockForUpdate()->first();
+
+        if (! $delivery || \in_array($delivery->status, ['delivered', 'cancelled'], true)) {
+            return;
+        }
+
+        $delivery->update(['status' => 'cancelled']);
+
+        if ($delivery->driver) {
+            Notifier::send(
+                $delivery->driver->user_id,
+                'delivery',
+                'La commande que vous deviez livrer a été annulée par le vendeur.'
+            );
         }
     }
 

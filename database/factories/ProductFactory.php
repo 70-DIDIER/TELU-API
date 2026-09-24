@@ -29,7 +29,7 @@ class ProductFactory extends Factory
             // TogoCatalog) plutôt qu'une image Lorem Picsum aléatoire sans
             // rapport avec ce qui est vendu.
             'image_url' => $product['image_url'],
-            'stock' => fake()->numberBetween(0, 200),
+            'stock' => fake()->numberBetween(1, 200),
             'is_available' => fake()->boolean(90),
         ];
     }

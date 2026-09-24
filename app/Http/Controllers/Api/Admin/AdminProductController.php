@@ -56,7 +56,12 @@ class AdminProductController extends Controller
             return response()->json(['message' => 'Produit introuvable.'], 404);
         }
 
-        $found->update(['is_available' => $data['is_available']]);
+        // blocked_at makes the take-down stick: the vendor cannot re-enable a
+        // product an admin removed (VendorProductController::update()).
+        $found->update([
+            'is_available' => $data['is_available'],
+            'blocked_at' => $data['is_available'] ? null : now(),
+        ]);
 
         return response()->json($found);
     }

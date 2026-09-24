@@ -32,6 +32,7 @@ class PaymentTest extends TestCase
         $this->client = User::factory()->type('client')->create();
         $this->order = Order::factory()->create([
             'customer_id' => $this->client->id,
+            'status' => 'pending',
             'total_amount' => 5000,
         ]);
         Sanctum::actingAs($this->client);
@@ -311,5 +312,36 @@ class PaymentTest extends TestCase
         $this->getJson('/api/payments')
             ->assertOk()
             ->assertJsonCount(1, 'data');
+    }
+
+    public function test_a_cancelled_order_cannot_be_paid(): void
+    {
+        Http::fake();
+        $this->order->update(['status' => 'cancelled']);
+
+        $this->payOrder()->assertUnprocessable();
+
+        $this->assertDatabaseCount('payments', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_a_payment_succeeding_after_the_order_was_cancelled_is_flagged_refunded(): void
+    {
+        Http::fake(['*/api/v1/status' => Http::response(['status' => 0, 'tx_reference' => 'TX-1'])]);
+
+        $payment = Payment::factory()->create([
+            'user_id' => $this->client->id,
+            'reference_type' => 'order',
+            'reference_id' => $this->order->id,
+            'status' => 'pending',
+            'transaction_id' => 'TX-1',
+        ]);
+        $this->order->update(['status' => 'cancelled']);
+
+        $this->postJson("/api/payments/{$payment->id}/check")
+            ->assertOk()
+            ->assertJsonPath('status', 'refunded');
+
+        $this->assertNull($this->order->fresh()->wallet_settled_at);
     }
 }

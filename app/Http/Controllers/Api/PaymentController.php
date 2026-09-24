@@ -67,7 +67,7 @@ class PaymentController extends Controller
         $amount = $this->resolveAmount($data['reference_type'], $data['reference_id'], $user);
 
         if ($amount instanceof JsonResponse) {
-            return $amount; // 404 not found / 403 not owned.
+            return $amount; // 404 not found / 403 not owned / 422 cancelled.
         }
 
         $alreadyPaid = Payment::query()
@@ -232,7 +232,11 @@ class PaymentController extends Controller
         if ($payment->reference_type === 'order') {
             $order = Order::find($payment->reference_id);
 
-            if ($order) {
+            if ($order?->status === 'cancelled') {
+                // Paid after the order was cancelled (a push validated late on
+                // the handset): never keep that money silently.
+                CommerceLedger::refundIfPaid($order);
+            } elseif ($order) {
                 CommerceLedger::settleOrderIfReady($order);
             }
         } elseif ($payment->reference_type === 'subscription') {
@@ -334,7 +338,8 @@ class PaymentController extends Controller
 
     /**
      * Resolve the payable amount for a reference, enforcing ownership.
-     * Returns the amount, or a JsonResponse error (404/403).
+     * Returns the amount, or a JsonResponse error (404/403, 422 for a
+     * cancelled order).
      */
     private function resolveAmount(string $type, string $referenceId, User $user): float|JsonResponse
     {
@@ -346,6 +351,9 @@ class PaymentController extends Controller
                 }
                 if ($order->customer_id !== $user->id) {
                     return response()->json(['message' => 'Cette commande ne vous appartient pas.'], 403);
+                }
+                if ($order->status === 'cancelled') {
+                    return response()->json(['message' => 'Cette commande a été annulée et ne peut plus être payée.'], 422);
                 }
 
                 return (float) $order->total_amount;

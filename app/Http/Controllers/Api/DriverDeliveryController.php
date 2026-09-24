@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Delivery;
 use App\Models\Driver;
+use App\Models\Order;
 use App\Services\CommerceLedger;
 use App\Services\Notifier;
 use Illuminate\Http\JsonResponse;
@@ -80,6 +81,12 @@ class DriverDeliveryController extends Controller
                 return null;
             }
 
+            if ($found->status === 'cancelled') {
+                throw ValidationException::withMessages([
+                    'delivery' => ['Cette livraison a été annulée.'],
+                ]);
+            }
+
             if ($found->status !== 'awaiting_driver' || $found->driver_id !== null) {
                 throw ValidationException::withMessages([
                     'delivery' => ['Cette livraison a déjà été prise par un autre livreur.'],
@@ -124,15 +131,27 @@ class DriverDeliveryController extends Controller
         }
 
         $result = DB::transaction(function () use ($driver, $delivery) {
-            $found = $driver->deliveries()->lockForUpdate()->find($delivery);
+            $found = $driver->deliveries()->find($delivery);
 
             if (! $found) {
                 return null;
             }
 
+            // Lock the order before the delivery — the same order as
+            // VendorOrderController::updateStatus() — so a vendor cancellation
+            // and a pickup can never interleave.
+            $order = Order::query()->lockForUpdate()->find($found->order_id);
+            $found = Delivery::query()->lockForUpdate()->find($found->id);
+
             if ($found->status !== 'assigned') {
                 throw ValidationException::withMessages([
                     'delivery' => ["Action impossible depuis le statut « {$found->status} »."],
+                ]);
+            }
+
+            if (! $order || ! \in_array($order->status, ['accepted', 'preparing'], true)) {
+                throw ValidationException::withMessages([
+                    'delivery' => ['Cette commande ne peut plus être récupérée (annulée ou déjà en livraison).'],
                 ]);
             }
 
@@ -141,22 +160,19 @@ class DriverDeliveryController extends Controller
                 'pickup_time' => now(),
             ]);
 
-            $found->loadMissing([
+            $order->update(['status' => 'in_delivery']);
+
+            // Notify the customer that their order is on the way.
+            Notifier::send(
+                $order->customer_id,
+                'delivery',
+                'Votre commande est en cours de livraison.'
+            );
+
+            return $found->load([
                 'order.vendor:id,user_id,shop_name,address,latitude,longitude',
                 'order.customer:id,full_name,phone',
             ]);
-            $found->order?->update(['status' => 'in_delivery']);
-
-            // Notify the customer that their order is on the way.
-            if ($found->order) {
-                Notifier::send(
-                    $found->order->customer_id,
-                    'delivery',
-                    'Votre commande est en cours de livraison.'
-                );
-            }
-
-            return $found;
         });
 
         if ($result === null) {
@@ -171,7 +187,9 @@ class DriverDeliveryController extends Controller
      * delivery on the ground without depending on the customer confirming
      * receipt (which often never happens): the order moves to delivered and,
      * if the order is already paid, the vendor/driver wallets settle. The
-     * customer's confirm-receipt endpoint remains an equivalent alternative.
+     * customer's confirm-receipt endpoint remains an equivalent alternative
+     * while the order is still in_delivery; once the driver closed it there is
+     * nothing left for the customer to confirm.
      */
     public function deliver(Request $request, string $delivery): JsonResponse
     {
@@ -209,7 +227,7 @@ class DriverDeliveryController extends Controller
                 Notifier::send(
                     $order->customer_id,
                     'delivery',
-                    'Votre commande a été livrée. Merci de confirmer la réception si tout est en ordre.'
+                    'Votre commande a été livrée par le livreur.'
                 );
 
                 if ($order->vendor) {

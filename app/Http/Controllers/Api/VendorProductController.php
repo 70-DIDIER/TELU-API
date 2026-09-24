@@ -80,7 +80,16 @@ class VendorProductController extends Controller
             return response()->json(['message' => 'Produit introuvable ou non autorisé.'], 404);
         }
 
-        $found->update($request->validated());
+        $data = $request->validated();
+
+        // An admin take-down cannot be lifted by the vendor re-enabling it.
+        if ($found->blocked_at !== null && ($data['is_available'] ?? false)) {
+            return response()->json([
+                'message' => 'Ce produit a été retiré par la modération et ne peut pas être remis en ligne.',
+            ], 403);
+        }
+
+        $found->update($data);
 
         return response()->json($found);
     }
@@ -100,6 +109,14 @@ class VendorProductController extends Controller
 
         if (! $found) {
             return response()->json(['message' => 'Produit introuvable ou non autorisé.'], 404);
+        }
+
+        // Order lines keep a foreign key on the product (order history):
+        // a product already ordered can only be taken off the catalogue.
+        if ($found->orderItems()->exists()) {
+            return response()->json([
+                'message' => 'Ce produit figure dans des commandes et ne peut pas être supprimé. Désactivez-le (is_available = false) pour le retirer du catalogue.',
+            ], 409);
         }
 
         $found->delete();
