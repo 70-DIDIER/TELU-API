@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Profile;
 
+use App\Support\IdDocumentType;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class VendorProfileRequest extends FormRequest
 {
@@ -22,11 +24,12 @@ class VendorProfileRequest extends FormRequest
             'shop_name' => [$required, 'string', 'max:255'],
             'logo_url' => ['nullable', 'string', 'max:2048'],
             'description' => ['nullable', 'string'],
-            'address' => ['nullable', 'string', 'max:255'],
-            'latitude' => ['nullable', 'numeric', 'between:-90,90'],
-            'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'address' => [$required, 'string', 'max:255'],
+            'latitude' => [$required, 'numeric', 'between:-90,90'],
+            'longitude' => [$required, 'numeric', 'between:-180,180'],
             'id_number' => ['nullable', 'string', 'max:255'],
             'id_document_url' => ['nullable', 'string', 'max:2048'],
+            'id_document_type' => ['nullable', Rule::in(IdDocumentType::OPTIONS)],
             'rccm_number' => ['nullable', 'string', 'max:255'],
             'rccm_document_url' => ['nullable', 'string', 'max:2048'],
         ];

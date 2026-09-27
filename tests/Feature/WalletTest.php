@@ -71,8 +71,8 @@ class WalletTest extends TestCase
         $this->assertEquals((float) $order->vendor_net_amount, (float) $vendor->fresh()->wallet->balance);
         $this->assertEquals((float) $delivery->driver_net_amount, (float) $driver->fresh()->wallet->balance);
 
-        $this->assertDatabaseHas('notifications', ['user_id' => $vendorUser->id, 'type' => 'wallet']);
-        $this->assertDatabaseHas('notifications', ['user_id' => $driverUser->id, 'type' => 'wallet']);
+        $this->assertDatabaseHas('notifications', ['user_id' => $vendorUser->id, 'type' => 'wallet', 'route' => 'vendor_wallet']);
+        $this->assertDatabaseHas('notifications', ['user_id' => $driverUser->id, 'type' => 'wallet', 'route' => 'driver_wallet']);
     }
 
     public function test_the_wallet_is_not_credited_without_a_successful_payment(): void

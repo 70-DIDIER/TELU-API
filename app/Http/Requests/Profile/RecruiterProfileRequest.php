@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Profile;
 
+use App\Support\IdDocumentType;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class RecruiterProfileRequest extends FormRequest
 {
@@ -21,6 +23,7 @@ class RecruiterProfileRequest extends FormRequest
             'industry' => ['nullable', 'string', 'max:255'],
             'id_number' => ['nullable', 'string', 'max:255'],
             'id_document_url' => ['nullable', 'string', 'max:2048'],
+            'id_document_type' => ['nullable', Rule::in(IdDocumentType::OPTIONS)],
             'rccm_number' => ['nullable', 'string', 'max:255'],
             'company_document_url' => ['nullable', 'string', 'max:2048'],
         ];

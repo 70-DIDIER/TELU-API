@@ -17,10 +17,30 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->type('vendor')->create();
         Sanctum::actingAs($user);
 
-        $this->postJson('/api/vendor', ['shop_name' => 'Chez Ama'])
+        $this->postJson('/api/vendor', $this->validVendorPayload())
             ->assertCreated()
             ->assertJsonPath('shop_name', 'Chez Ama')
-            ->assertJsonPath('user_id', $user->id);
+            ->assertJsonPath('user_id', $user->id)
+            ->assertJsonPath('verification_status', 'pending');
+    }
+
+    public function test_a_vendor_can_submit_a_voter_card_as_id_document(): void
+    {
+        Sanctum::actingAs(User::factory()->type('vendor')->create());
+
+        $this->postJson('/api/vendor', $this->validVendorPayload([
+            'id_document_type' => 'carte_electeur',
+            'id_document_url' => 'https://cdn.telu.tg/uploads/documents/piece.jpg',
+        ]))->assertCreated()->assertJsonPath('id_document_type', 'carte_electeur');
+    }
+
+    public function test_an_invalid_id_document_type_is_rejected(): void
+    {
+        Sanctum::actingAs(User::factory()->type('vendor')->create());
+
+        $this->postJson('/api/vendor', $this->validVendorPayload([
+            'id_document_type' => 'permis_de_conduire',
+        ]))->assertUnprocessable()->assertJsonValidationErrors('id_document_type');
     }
 
     public function test_user_id_in_the_body_is_ignored_when_creating_a_profile(): void
@@ -29,10 +49,9 @@ class BusinessProfileTest extends TestCase
         $other = User::factory()->create();
         Sanctum::actingAs($user);
 
-        $this->postJson('/api/vendor', [
-            'shop_name' => 'Chez Ama',
+        $this->postJson('/api/vendor', $this->validVendorPayload([
             'user_id' => $other->id,
-        ])->assertCreated()->assertJsonPath('user_id', $user->id);
+        ]))->assertCreated()->assertJsonPath('user_id', $user->id);
     }
 
     public function test_a_standard_client_account_can_add_a_vendor_profile(): void
@@ -40,7 +59,7 @@ class BusinessProfileTest extends TestCase
         $user = User::factory()->type('client')->create();
         Sanctum::actingAs($user);
 
-        $this->postJson('/api/vendor', ['shop_name' => 'Chez Ama'])
+        $this->postJson('/api/vendor', $this->validVendorPayload())
             ->assertCreated()
             ->assertJsonPath('shop_name', 'Chez Ama')
             ->assertJsonPath('user_id', $user->id);
@@ -50,7 +69,7 @@ class BusinessProfileTest extends TestCase
     {
         Sanctum::actingAs(User::factory()->type('admin')->create());
 
-        $this->postJson('/api/vendor', ['shop_name' => 'Chez Ama'])->assertForbidden();
+        $this->postJson('/api/vendor', $this->validVendorPayload())->assertForbidden();
     }
 
     public function test_a_second_vendor_profile_is_rejected(): void
@@ -59,7 +78,29 @@ class BusinessProfileTest extends TestCase
         Vendor::factory()->create(['user_id' => $user->id]);
         Sanctum::actingAs($user);
 
-        $this->postJson('/api/vendor', ['shop_name' => 'Doublon'])->assertConflict();
+        $this->postJson('/api/vendor', $this->validVendorPayload(['shop_name' => 'Doublon']))->assertConflict();
+    }
+
+    public function test_creating_a_vendor_profile_without_gps_coordinates_is_rejected(): void
+    {
+        Sanctum::actingAs(User::factory()->type('vendor')->create());
+
+        $this->postJson('/api/vendor', ['shop_name' => 'Chez Ama', 'address' => 'Lomé'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['latitude', 'longitude']);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validVendorPayload(array $overrides = []): array
+    {
+        return array_merge([
+            'shop_name' => 'Chez Ama',
+            'address' => 'Boulevard du 13 Janvier, Lomé',
+            'latitude' => 6.1319,
+            'longitude' => 1.2228,
+        ], $overrides);
     }
 
     public function test_show_returns_404_without_a_profile(): void

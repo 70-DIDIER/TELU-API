@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Profile;
 
+use App\Support\IdDocumentType;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class DriverProfileRequest extends FormRequest
 {
@@ -26,6 +28,7 @@ class DriverProfileRequest extends FormRequest
             'current_latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'current_longitude' => ['nullable', 'numeric', 'between:-180,180'],
             'id_document_url' => ['nullable', 'string', 'max:2048'],
+            'id_document_type' => ['nullable', Rule::in(IdDocumentType::OPTIONS)],
             'vehicle_photo_url' => ['nullable', 'string', 'max:2048'],
         ];
     }

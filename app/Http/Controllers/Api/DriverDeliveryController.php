@@ -7,15 +7,24 @@ use App\Models\Delivery;
 use App\Models\Driver;
 use App\Services\CommerceLedger;
 use App\Services\Notifier;
+use App\Support\Geo;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class DriverDeliveryController extends Controller
 {
+    private const PER_PAGE = 20;
+
     /**
-     * List deliveries still awaiting a driver (the open pool).
+     * List deliveries still awaiting a driver (the open pool), nearest
+     * pickup (vendor) first when the driver has a known position — falls
+     * back to newest-first otherwise. The open pool is a small, currently-
+     * live working set (not the full orders history), so sorting the whole
+     * thing in PHP before paginating is cheap; there is no PostGIS/earth
+     * distance extension set up to push this into SQL.
      */
     public function available(Request $request): JsonResponse
     {
@@ -33,9 +42,39 @@ class DriverDeliveryController extends Controller
                 'order.vendor:id,user_id,shop_name,address,latitude,longitude',
             ])
             ->latest()
-            ->paginate(20);
+            ->get();
 
-        return response()->json($deliveries);
+        if ($driver->current_latitude !== null && $driver->current_longitude !== null) {
+            $driverLat = (float) $driver->current_latitude;
+            $driverLng = (float) $driver->current_longitude;
+
+            $deliveries = $deliveries
+                ->map(function (Delivery $delivery) use ($driverLat, $driverLng) {
+                    $vendor = $delivery->order?->vendor;
+                    $distance = $vendor && $vendor->latitude !== null && $vendor->longitude !== null
+                        ? Geo::distanceKm($driverLat, $driverLng, (float) $vendor->latitude, (float) $vendor->longitude)
+                        : null;
+
+                    // Not comparable to a real distance: pushed to the end, never sorted to the top.
+                    $delivery->setAttribute('distance_km', $distance !== null ? round($distance, 1) : null);
+
+                    return $delivery;
+                })
+                ->sortBy(fn (Delivery $delivery) => $delivery->distance_km ?? PHP_FLOAT_MAX)
+                ->values();
+        }
+
+        $page = (int) $request->integer('page', 1);
+
+        $paginated = new LengthAwarePaginator(
+            $deliveries->forPage($page, self::PER_PAGE)->values(),
+            $deliveries->count(),
+            self::PER_PAGE,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
+
+        return response()->json($paginated);
     }
 
     /**
@@ -53,6 +92,7 @@ class DriverDeliveryController extends Controller
             ->with([
                 'order:id,vendor_id,customer_id,delivery_address,delivery_latitude,delivery_longitude,total_amount,status',
                 'order.vendor:id,user_id,shop_name,address,latitude,longitude',
+                'order.vendor.user:id,phone',
                 'order.customer:id,full_name,phone',
             ])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
@@ -98,7 +138,8 @@ class DriverDeliveryController extends Controller
                 Notifier::send(
                     $found->order->vendor->user_id,
                     'delivery',
-                    'Un livreur a accepté la livraison de votre commande.'
+                    'Un livreur a accepté la livraison de votre commande.',
+                    ['route' => 'vendor_order', 'reference_id' => $found->order->id]
                 );
             }
 
@@ -152,7 +193,8 @@ class DriverDeliveryController extends Controller
                 Notifier::send(
                     $found->order->customer_id,
                     'delivery',
-                    'Votre commande est en cours de livraison.'
+                    'Votre commande est en cours de livraison.',
+                    ['route' => 'customer_order_track', 'reference_id' => $found->order->id]
                 );
             }
 
@@ -209,14 +251,16 @@ class DriverDeliveryController extends Controller
                 Notifier::send(
                     $order->customer_id,
                     'delivery',
-                    'Votre commande a été livrée. Merci de confirmer la réception si tout est en ordre.'
+                    'Votre commande a été livrée. Merci de confirmer la réception si tout est en ordre.',
+                    ['route' => 'customer_order_track', 'reference_id' => $order->id]
                 );
 
                 if ($order->vendor) {
                     Notifier::send(
                         $order->vendor->user_id,
                         'order',
-                        'Votre commande a été livrée par le livreur.'
+                        'Votre commande a été livrée par le livreur.',
+                        ['route' => 'vendor_order', 'reference_id' => $order->id]
                     );
                 }
             }

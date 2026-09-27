@@ -40,7 +40,7 @@ class OrderController extends Controller
     {
         $orders = $request->user()
             ->orders()
-            ->with('vendor:id,shop_name')
+            ->with(['vendor:id,shop_name', 'payment:payments.id,payments.reference_id,payments.status,payments.payment_method,payments.paid_at'])
             ->latest()
             ->paginate(20);
 
@@ -54,7 +54,11 @@ class OrderController extends Controller
     {
         $found = $request->user()
             ->orders()
-            ->with(['vendor:id,user_id,shop_name,address', 'items.product:id,name,price'])
+            ->with([
+                'vendor:id,user_id,shop_name,address',
+                'items.product:id,name,price',
+                'payment:payments.id,payments.reference_id,payments.status,payments.payment_method,payments.paid_at',
+            ])
             ->find($order);
 
         if (! $found) {
@@ -98,7 +102,8 @@ class OrderController extends Controller
                     Notifier::send(
                         $delivery->driver->user_id,
                         'delivery',
-                        'Livraison confirmée par le client.'
+                        'Livraison confirmée par le client.',
+                        ['route' => 'driver_active', 'reference_id' => $delivery->id]
                     );
                 }
             }
@@ -107,7 +112,8 @@ class OrderController extends Controller
             Notifier::send(
                 $found->vendor->user_id,
                 'order',
-                'Votre commande a été livrée et confirmée par le client.'
+                'Votre commande a été livrée et confirmée par le client.',
+                ['route' => 'vendor_order', 'reference_id' => $found->id]
             );
         });
 
@@ -206,7 +212,8 @@ class OrderController extends Controller
         Notifier::send(
             $order->vendor->user_id,
             'order',
-            "Nouvelle commande reçue (montant : {$order->total_amount})."
+            "Nouvelle commande reçue (montant : {$order->total_amount}).",
+            ['route' => 'vendor_order', 'reference_id' => $order->id]
         );
 
         return response()->json(

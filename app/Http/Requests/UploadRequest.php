@@ -18,7 +18,7 @@ class UploadRequest extends FormRequest
     {
         return [
             'file' => ['required', 'file', 'image', 'max:5120'],
-            'folder' => ['nullable', 'string', 'in:products,documents,avatars,vendors,properties'],
+            'folder' => ['nullable', 'string', 'in:products,documents,avatars,vendors,properties,banners'],
         ];
     }
 }

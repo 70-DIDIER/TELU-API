@@ -12,8 +12,10 @@ class PropertyController extends Controller
     /**
      * Browse/search the public catalogue of available properties.
      *
-     * Supported query params: search, property_type, price_unit, owner_id,
-     * min_price, max_price, bedrooms.
+     * Supported query params: search, property_type (single value, or several
+     * comma-separated — e.g. "room,studio,apartment,house" for every
+     * non-hotel type in one call), price_unit, owner_id, min_price, max_price,
+     * bedrooms.
      */
     public function index(Request $request): JsonResponse
     {
@@ -23,7 +25,10 @@ class PropertyController extends Controller
             ->where('is_available', true)
             ->with('owner:id,user_id,company_name,owner_type,subscription_id,subscription_expires_at')
             ->when($request->filled('search'), fn ($q) => $q->where('title', 'like', '%'.$request->string('search').'%'))
-            ->when($request->filled('property_type'), fn ($q) => $q->where('property_type', $request->string('property_type')))
+            ->when($request->filled('property_type'), function ($q) use ($request) {
+                $types = array_filter(explode(',', $request->string('property_type')));
+                $q->whereIn('property_type', $types);
+            })
             ->when($request->filled('price_unit'), fn ($q) => $q->where('price_unit', $request->string('price_unit')))
             ->when($request->filled('owner_id'), fn ($q) => $q->where('owner_id', $request->string('owner_id')))
             ->when($request->filled('min_price'), fn ($q) => $q->where('price', '>=', $request->float('min_price')))

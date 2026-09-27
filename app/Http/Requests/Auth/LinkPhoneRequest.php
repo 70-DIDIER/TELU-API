@@ -23,6 +23,13 @@ class LinkPhoneRequest extends FormRequest
     {
         return [
             'phone' => ['required', 'string', 'max:30'],
+            // Requis seulement si le numéro est étranger (code envoyé par email,
+            // AfrikSMS ne couvrant que le Togo) ET que le compte n'a pas déjà
+            // d'adresse — un compte social en a le plus souvent une.
+            'email' => [
+                $this->isForeignPhone() && ! $this->user()?->email ? 'required' : 'nullable',
+                'email', 'max:255',
+            ],
         ];
     }
 
@@ -32,5 +39,12 @@ class LinkPhoneRequest extends FormRequest
     public function internationalPhone(): string
     {
         return PhoneNumber::e164($this->validated()['phone']);
+    }
+
+    private function isForeignPhone(): bool
+    {
+        $phone = PhoneNumber::e164((string) $this->input('phone'));
+
+        return $phone !== '' && ! PhoneNumber::isTogo($phone);
     }
 }

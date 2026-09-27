@@ -65,7 +65,8 @@ class JobApplicationController extends Controller
         Notifier::send(
             $offer->recruiter->user_id,
             'job',
-            "Nouvelle candidature reçue pour « {$offer->title} »."
+            "Nouvelle candidature reçue pour « {$offer->title} ».",
+            ['route' => 'recruiter_applications', 'reference_id' => $offer->id]
         );
 
         return response()->json(
@@ -103,7 +104,8 @@ class JobApplicationController extends Controller
         Notifier::send(
             $found->jobOffer->recruiter->user_id,
             'job',
-            "Une candidature a été retirée pour « {$found->jobOffer->title} »."
+            "Une candidature a été retirée pour « {$found->jobOffer->title} ».",
+            ['route' => 'recruiter_applications', 'reference_id' => $found->jobOffer->id]
         );
 
         return response()->json(['message' => 'Candidature retirée.']);

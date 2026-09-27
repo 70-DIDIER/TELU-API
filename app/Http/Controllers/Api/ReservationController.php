@@ -101,7 +101,8 @@ class ReservationController extends Controller
         Notifier::send(
             $reservation->property->owner->user_id,
             'reservation',
-            "Nouvelle demande de réservation (montant : {$reservation->total_price})."
+            "Nouvelle demande de réservation (montant : {$reservation->total_price}).",
+            ['route' => 'owner_reservations']
         );
 
         return response()->json(
@@ -133,7 +134,8 @@ class ReservationController extends Controller
         Notifier::send(
             $found->property->owner->user_id,
             'reservation',
-            'Une réservation a été annulée par le client.'
+            'Une réservation a été annulée par le client.',
+            ['route' => 'owner_reservations']
         );
 
         return response()->json($found->fresh());

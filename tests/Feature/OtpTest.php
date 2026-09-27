@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Mail\OtpCodeMail;
 use App\Models\OtpCode;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -151,21 +153,86 @@ class OtpTest extends TestCase
         ])->assertUnprocessable()->assertJsonValidationErrors('otp_token');
     }
 
-    public function test_registration_never_requires_the_token_for_a_foreign_number(): void
+    public function test_registering_with_a_foreign_number_requires_an_email(): void
     {
-        config(['otp.required_for_registration' => true]);
-
-        // AfrikSMS ne couvre que le Togo : pas de vérification possible pour
-        // un numéro étranger, quel que soit le flag.
         $this->postJson('/api/auth/register', [
-            'full_name' => 'Sans OTP Étranger',
+            'full_name' => 'Sans Email',
             'phone' => '+33612345678',
             'password' => 'password123',
             'password_confirmation' => 'password123',
             'user_type' => 'client',
-        ])->assertCreated()->assertJsonPath('user.is_verified', false);
+        ])->assertUnprocessable()->assertJsonValidationErrors('email');
+    }
 
-        $this->assertDatabaseHas('users', ['phone' => '33612345678', 'is_verified' => false]);
+    public function test_registration_requires_the_token_for_a_foreign_number_when_the_flag_is_on(): void
+    {
+        config(['otp.required_for_registration' => true]);
+
+        // Un numéro étranger est désormais vérifiable (code par email) : la
+        // règle s'applique donc à lui aussi, plus de contournement.
+        $this->postJson('/api/auth/register', [
+            'full_name' => 'Sans OTP Étranger',
+            'phone' => '+33612345678',
+            'email' => 'foreign@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'user_type' => 'client',
+        ])->assertUnprocessable()->assertJsonValidationErrors('otp_token');
+    }
+
+    public function test_sending_a_code_to_a_foreign_number_requires_an_email(): void
+    {
+        $this->postJson('/api/auth/otp/send', ['phone' => '+33612345678'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('email');
+    }
+
+    public function test_a_foreign_number_receives_its_code_by_email(): void
+    {
+        Mail::fake();
+
+        $this->postJson('/api/auth/otp/send', [
+            'phone' => '+33612345678',
+            'email' => 'foreign@example.com',
+        ])->assertOk()->assertJsonPath('message', 'Code envoyé par email.');
+
+        Mail::assertSent(OtpCodeMail::class, fn ($mail) => $mail->hasTo('foreign@example.com'));
+
+        $this->assertDatabaseHas('otp_codes', [
+            'phone' => '33612345678',
+            'purpose' => 'registration',
+        ]);
+    }
+
+    public function test_a_foreign_number_can_complete_the_full_otp_flow_by_email(): void
+    {
+        Mail::fake();
+
+        $this->postJson('/api/auth/otp/send', [
+            'phone' => '+33612345678',
+            'email' => 'foreign@example.com',
+        ])->assertOk();
+
+        // Le code n'est jamais en clair en base : on le relit depuis le
+        // Mailable capturé par Mail::fake().
+        $code = Mail::sent(OtpCodeMail::class)->last()->code;
+
+        $token = $this->postJson('/api/auth/otp/verify', [
+            'phone' => '+33612345678',
+            'code' => $code,
+        ])->json('verification_token');
+
+        $this->assertNotNull($token, 'Le jeton de vérification aurait dû être renvoyé.');
+
+        $this->postJson('/api/auth/register', [
+            'full_name' => 'Ama Étrangère',
+            'phone' => '+33612345678',
+            'email' => 'foreign@example.com',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'user_type' => 'client',
+            'otp_token' => $token,
+        ])->assertCreated()->assertJsonPath('user.is_verified', true);
     }
 
     public function test_an_authenticated_user_can_verify_their_own_number(): void

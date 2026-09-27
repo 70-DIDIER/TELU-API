@@ -37,6 +37,8 @@ class MessageTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'user_id' => $this->other->id,
             'type' => 'message',
+            'route' => 'chat',
+            'reference_id' => $this->me->id,
         ]);
     }
 

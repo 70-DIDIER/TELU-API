@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Mail\OtpCodeMail;
 use App\Models\OtpCode;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -61,6 +63,19 @@ class PasswordResetTest extends TestCase
             'phone' => '22890112233',
             'purpose' => 'password_reset',
         ]);
+    }
+
+    public function test_forgot_sends_a_code_by_email_for_a_foreign_numbers_account(): void
+    {
+        Mail::fake();
+
+        User::factory()->create(['phone' => '33612345678', 'email' => 'foreign@example.com']);
+
+        $this->postJson('/api/auth/password/forgot', ['phone' => '+33612345678'])
+            ->assertOk()
+            ->assertJsonPath('message', 'Code envoyé par email.');
+
+        Mail::assertSent(OtpCodeMail::class, fn ($mail) => $mail->hasTo('foreign@example.com'));
     }
 
     public function test_forgot_rejects_a_phone_without_an_account(): void

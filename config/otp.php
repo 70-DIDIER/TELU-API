@@ -4,11 +4,12 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Vérification par code OTP (SMS AfrikSMS)
+    | Vérification par code OTP (SMS AfrikSMS pour un numéro togolais, email
+    | pour un numéro étranger — voir App\Services\OtpService::issue())
     |--------------------------------------------------------------------------
     */
 
-    // Longueur du code envoyé par SMS.
+    // Longueur du code envoyé.
     'length' => (int) env('OTP_LENGTH', 4),
 
     // Durée de validité du code, en minutes.

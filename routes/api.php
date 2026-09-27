@@ -2,7 +2,9 @@
 
 use App\Http\Controllers\Api\AccountDeletionController;
 use App\Http\Controllers\Api\AddressController;
+use App\Http\Controllers\Api\Admin\AdminBannerController;
 use App\Http\Controllers\Api\Admin\AdminDeliveryController;
+use App\Http\Controllers\Api\Admin\AdminDriverController;
 use App\Http\Controllers\Api\Admin\AdminJobApplicationController;
 use App\Http\Controllers\Api\Admin\AdminJobOfferController;
 use App\Http\Controllers\Api\Admin\AdminJobSeekerController;
@@ -19,8 +21,11 @@ use App\Http\Controllers\Api\Admin\AdminStatsController;
 use App\Http\Controllers\Api\Admin\AdminSubscriptionController;
 use App\Http\Controllers\Api\Admin\AdminUserController;
 use App\Http\Controllers\Api\Admin\AdminVendorController;
+use App\Http\Controllers\Api\Admin\AdminWalletController;
 use App\Http\Controllers\Api\Admin\AdminWithdrawalController;
+use App\Http\Controllers\Api\AppVersionController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BannerController;
 use App\Http\Controllers\Api\DriverController;
 use App\Http\Controllers\Api\DriverDeliveryController;
 use App\Http\Controllers\Api\JobApplicationController;
@@ -60,6 +65,14 @@ use Illuminate\Support\Facades\Route;
 */
 Route::post('/auth/register', [AuthController::class, 'register']);
 Route::post('/auth/login', [AuthController::class, 'login']);
+
+// Version minimale/actuelle exigée par plateforme — l'app mobile l'appelle
+// à chaque démarrage (avant même la connexion) pour décider d'afficher ou
+// non l'écran de mise à jour forcée.
+Route::get('/app-version', [AppVersionController::class, 'show']);
+
+// Bannières publicitaires actives — carrousel "Offres du jour" de l'accueil.
+Route::get('/banners', [BannerController::class, 'index']);
 
 // Connexion sociale : le client envoie un jeton déjà obtenu auprès du
 // fournisseur (id_token Google / access_token Facebook), revérifié ici.
@@ -277,6 +290,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/vendors', [AdminVendorController::class, 'index']);
         Route::get('/vendors/{vendor}', [AdminVendorController::class, 'show']);
         Route::patch('/vendors/{vendor}/status', [AdminVendorController::class, 'updateStatus']);
+        Route::patch('/vendors/{vendor}/verification', [AdminVendorController::class, 'updateVerification']);
 
         // Commerce oversight — products (catalogue moderation).
         Route::get('/products', [AdminProductController::class, 'index']);
@@ -291,9 +305,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/deliveries', [AdminDeliveryController::class, 'index']);
         Route::get('/deliveries/{delivery}', [AdminDeliveryController::class, 'show']);
 
+        // Commerce oversight — drivers (read-only; suspension is at the user level).
+        Route::get('/drivers', [AdminDriverController::class, 'index']);
+        Route::get('/drivers/{driver}', [AdminDriverController::class, 'show']);
+        Route::patch('/drivers/{driver}/verification', [AdminDriverController::class, 'updateVerification']);
+
         // Real-estate oversight — property owners.
         Route::get('/property-owners', [AdminPropertyOwnerController::class, 'index']);
         Route::get('/property-owners/{owner}', [AdminPropertyOwnerController::class, 'show']);
+        Route::patch('/property-owners/{owner}/verification', [AdminPropertyOwnerController::class, 'updateVerification']);
 
         // Real-estate oversight — properties (listings moderation).
         Route::get('/properties', [AdminPropertyController::class, 'index']);
@@ -307,6 +327,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Jobs oversight — recruiters.
         Route::get('/recruiters', [AdminRecruiterController::class, 'index']);
         Route::get('/recruiters/{recruiter}', [AdminRecruiterController::class, 'show']);
+        Route::patch('/recruiters/{recruiter}/verification', [AdminRecruiterController::class, 'updateVerification']);
 
         // Jobs oversight — job seekers.
         Route::get('/job-seekers', [AdminJobSeekerController::class, 'index']);
@@ -345,5 +366,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/withdrawals', [AdminWithdrawalController::class, 'index']);
         Route::patch('/withdrawals/{withdrawal}/pay', [AdminWithdrawalController::class, 'markPaid']);
         Route::patch('/withdrawals/{withdrawal}/reject', [AdminWithdrawalController::class, 'reject']);
+
+        // Cross-cutting — vendor/driver wallets (financial oversight, read-only).
+        Route::get('/wallets', [AdminWalletController::class, 'index']);
+        Route::get('/wallets/{wallet}', [AdminWalletController::class, 'show']);
+
+        // Cross-cutting — home carousel ad banners (CRUD).
+        Route::get('/banners', [AdminBannerController::class, 'index']);
+        Route::post('/banners', [AdminBannerController::class, 'store']);
+        Route::get('/banners/{banner}', [AdminBannerController::class, 'show']);
+        Route::put('/banners/{banner}', [AdminBannerController::class, 'update']);
+        Route::delete('/banners/{banner}', [AdminBannerController::class, 'destroy']);
     });
 });

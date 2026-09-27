@@ -222,7 +222,12 @@ class PaymentController extends Controller
             'payment',
             $status === 'success'
                 ? "Paiement de {$payment->amount} FCFA confirmé."
-                : "Votre paiement de {$payment->amount} FCFA n'a pas abouti."
+                : "Votre paiement de {$payment->amount} FCFA n'a pas abouti.",
+            match ($payment->reference_type) {
+                'order' => ['route' => 'customer_order_track', 'reference_id' => $payment->reference_id],
+                'reservation' => ['route' => 'customer_reservations'],
+                default => [],
+            }
         );
 
         if ($status !== 'success') {
@@ -298,7 +303,8 @@ class PaymentController extends Controller
         Notifier::send(
             $payment->user_id,
             'subscription',
-            "Votre abonnement « {$subscription->name} » est actif jusqu'au {$expiresAt->format('d/m/Y')}."
+            "Votre abonnement « {$subscription->name} » est actif jusqu'au {$expiresAt->format('d/m/Y')}.",
+            ['route' => $subscription->subscriber_type === 'recruiter' ? 'recruiter_space' : 'owner_space']
         );
     }
 

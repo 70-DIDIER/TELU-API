@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
-use App\Http\Requests\Auth\SendOtpRequest;
 use App\Http\Requests\Auth\VerifyOtpRequest;
 use App\Models\User;
 use App\Services\OtpService;
@@ -12,7 +12,8 @@ use App\Support\PhoneNumber;
 use Illuminate\Http\JsonResponse;
 
 /**
- * Mot de passe oublié, par code OTP envoyé en SMS (AfrikSMS).
+ * Mot de passe oublié, par code OTP — SMS (AfrikSMS) ou email pour un compte
+ * au numéro étranger (voir OtpService::issue()).
  *
  * Parcours en trois temps, calqué sur l'inscription :
  *  1. POST /api/auth/password/forgot  — envoie un code au numéro s'il est
@@ -29,17 +30,21 @@ class PasswordResetController extends Controller
     /**
      * Envoie un code de réinitialisation au numéro fourni.
      */
-    public function forgot(SendOtpRequest $request): JsonResponse
+    public function forgot(ForgotPasswordRequest $request): JsonResponse
     {
         $phone = $request->internationalPhone();
+        $user = $this->findUserByPhone($phone);
 
-        if (! $this->findUserByPhone($phone)) {
+        if (! $user) {
             return response()->json([
                 'message' => 'Aucun compte associé à ce numéro.',
             ], 404);
         }
 
-        $result = $this->otp->issue($phone, 'password_reset', $request->ip());
+        // Le compte existe déjà : on préfère son email enregistré à celui
+        // (facultatif) transmis dans la requête, pour un numéro étranger.
+        $email = $user->email ?? $request->validated()['email'] ?? null;
+        $result = $this->otp->issue($phone, 'password_reset', $request->ip(), $email);
 
         if (! $result['ok']) {
             $response = response()->json(
@@ -58,7 +63,7 @@ class PasswordResetController extends Controller
         }
 
         return response()->json([
-            'message' => 'Code envoyé par SMS.',
+            'message' => $result['channel'] === 'email' ? 'Code envoyé par email.' : 'Code envoyé par SMS.',
             'expires_at' => $result['otp']->expires_at,
             'resend_after' => (int) config('otp.resend_delay_seconds'),
         ]);

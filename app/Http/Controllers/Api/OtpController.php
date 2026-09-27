@@ -14,7 +14,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Vérification d'un numéro de téléphone par code OTP envoyé en SMS (AfrikSMS).
+ * Vérification d'un numéro de téléphone par code OTP — SMS (AfrikSMS) pour un
+ * numéro togolais, email pour un numéro étranger (AfrikSMS ne couvre que le
+ * Togo ; voir OtpService::issue()).
  *
  * Trois parcours :
  *  - public (`purpose = registration`) : avant de créer un compte. La
@@ -42,7 +44,7 @@ class OtpController extends Controller
             ], 409);
         }
 
-        $result = $this->otp->issue($phone, 'registration', $request->ip());
+        $result = $this->otp->issue($phone, 'registration', $request->ip(), $request->validated()['email'] ?? null);
 
         return $this->respondToIssue($result);
     }
@@ -83,7 +85,7 @@ class OtpController extends Controller
             return response()->json(['message' => 'Votre numéro est déjà vérifié.'], 409);
         }
 
-        $result = $this->otp->issue($user->phone, 'verification', $request->ip());
+        $result = $this->otp->issue($user->phone, 'verification', $request->ip(), $user->email);
 
         return $this->respondToIssue($result);
     }
@@ -133,7 +135,8 @@ class OtpController extends Controller
             ], 409);
         }
 
-        $result = $this->otp->issue($phone, 'phone_link', $request->ip());
+        $email = $request->user()->email ?? $request->validated()['email'] ?? null;
+        $result = $this->otp->issue($phone, 'phone_link', $request->ip(), $email);
 
         return $this->respondToIssue($result);
     }
@@ -201,7 +204,7 @@ class OtpController extends Controller
         }
 
         return response()->json([
-            'message' => 'Code envoyé par SMS.',
+            'message' => $result['channel'] === 'email' ? 'Code envoyé par email.' : 'Code envoyé par SMS.',
             'expires_at' => $result['otp']->expires_at,
             'resend_after' => (int) config('otp.resend_delay_seconds'),
         ]);

@@ -2,13 +2,19 @@
 
 namespace App\Services;
 
+use App\Mail\OtpCodeMail;
 use App\Models\OtpCode;
 use App\Support\PhoneNumber;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
- * Cycle de vie des codes OTP envoyés par SMS (AfrikSMS).
+ * Cycle de vie des codes OTP, envoyés par SMS (AfrikSMS, numéros togolais) ou
+ * par email (tout autre pays — AfrikSMS ne couvre que le Togo, voir
+ * PhoneNumber::isTogo()).
  *
  * Trois usages (`purpose`) :
  *  - `registration` : valider un numéro qui n'a pas encore de compte ; la
@@ -18,7 +24,7 @@ use Illuminate\Support\Str;
  *    présenter à POST /api/auth/password/reset.
  *
  * Le code n'est jamais stocké en clair et n'est jamais renvoyé dans une réponse
- * HTTP : il ne transite que par SMS.
+ * HTTP : il ne transite que par SMS ou par email.
  */
 class OtpService
 {
@@ -28,16 +34,28 @@ class OtpService
     public function __construct(private readonly AfrikSms $sms) {}
 
     /**
-     * Génère un code, l'enregistre et l'envoie par SMS.
+     * Génère un code, l'enregistre et l'envoie — par SMS pour un numéro
+     * togolais, par email sinon (`$email` devient alors obligatoire ; voir
+     * les FormRequests qui l'exigent en amont pour un numéro étranger).
      *
-     * @return array{ok: bool, otp?: OtpCode, message?: string, retry_after?: int, status?: int}
+     * @return array{ok: bool, otp?: OtpCode, channel?: string, message?: string, retry_after?: int, status?: int}
      */
-    public function issue(string $phone, string $purpose, ?string $ip = null): array
+    public function issue(string $phone, string $purpose, ?string $ip = null, ?string $email = null): array
     {
         $phone = PhoneNumber::e164($phone);
 
         if ($phone === '') {
             return ['ok' => false, 'status' => 422, 'message' => 'Numéro de téléphone invalide.'];
+        }
+
+        $isTogo = PhoneNumber::isTogo($phone);
+
+        if (! $isTogo && ! $email) {
+            return [
+                'ok' => false,
+                'status' => 422,
+                'message' => 'Une adresse email est requise pour vérifier un numéro étranger.',
+            ];
         }
 
         $delay = (int) config('otp.resend_delay_seconds');
@@ -78,22 +96,43 @@ class OtpService
             'ip' => $ip,
         ]);
 
-        $result = $this->sms->send($phone, $this->buildMessage($code, $ttl));
+        $result = $isTogo
+            ? $this->sms->send($phone, $this->buildMessage($code, $ttl))
+            : $this->sendByEmail($email, $code, $ttl);
 
         if (! $result['ok']) {
-            // Pas de SMS parti : on retire le code pour ne pas bloquer un renvoi.
+            // Rien n'est parti : on retire le code pour ne pas bloquer un renvoi.
             $otp->delete();
 
             return [
                 'ok' => false,
                 'status' => 502,
-                'message' => $result['message'] ?? "Le SMS n'a pas pu être envoyé.",
+                'message' => $result['message'] ?? "Le code n'a pas pu être envoyé.",
             ];
         }
 
         $otp->update(['resource_id' => $result['resource_id'] ?? null]);
 
-        return ['ok' => true, 'otp' => $otp->fresh()];
+        return ['ok' => true, 'otp' => $otp->fresh(), 'channel' => $isTogo ? 'sms' : 'email'];
+    }
+
+    /**
+     * Envoie le code par email — jamais d'exception qui remonterait, même
+     * panne de comportement identique à App\Services\AfrikSms::send().
+     *
+     * @return array{ok: bool, message?: string}
+     */
+    private function sendByEmail(string $email, string $code, int $ttlMinutes): array
+    {
+        try {
+            Mail::to($email)->send(new OtpCodeMail($code, $ttlMinutes));
+
+            return ['ok' => true];
+        } catch (Throwable $e) {
+            Log::warning('OtpService: envoi email injoignable.', ['error' => $e->getMessage()]);
+
+            return ['ok' => false, 'message' => "L'email n'a pas pu être envoyé."];
+        }
     }
 
     /**

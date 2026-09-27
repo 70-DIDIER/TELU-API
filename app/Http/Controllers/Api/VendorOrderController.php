@@ -47,7 +47,11 @@ class VendorOrderController extends Controller
         }
 
         $orders = $vendor->orders()
-            ->with(['customer:id,full_name,phone', 'items:id,order_id,product_id,quantity,unit_price'])
+            ->with([
+                'customer:id,full_name,phone',
+                'items:id,order_id,product_id,quantity,unit_price',
+                'payment:payments.id,payments.reference_id,payments.status,payments.payment_method,payments.paid_at',
+            ])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->latest()
             ->paginate(20);
@@ -67,7 +71,11 @@ class VendorOrderController extends Controller
         }
 
         $found = $vendor->orders()
-            ->with(['customer:id,full_name,phone', 'items.product:id,name,price'])
+            ->with([
+                'customer:id,full_name,phone',
+                'items.product:id,name,price',
+                'payment:payments.id,payments.reference_id,payments.status,payments.payment_method,payments.paid_at',
+            ])
             ->find($order);
 
         if (! $found) {
@@ -125,7 +133,10 @@ class VendorOrderController extends Controller
             return response()->json(['message' => 'Commande introuvable.'], 404);
         }
 
-        return response()->json($updated->load('items.product:id,name,stock'));
+        return response()->json($updated->load([
+            'items.product:id,name,stock',
+            'payment:payments.id,payments.reference_id,payments.status,payments.payment_method,payments.paid_at',
+        ]));
     }
 
     /**
@@ -177,7 +188,8 @@ class VendorOrderController extends Controller
         Notifier::send(
             $order->customer_id,
             'payment',
-            "Votre commande a été annulée. Le remboursement de {$payment->amount} FCFA est en cours de traitement."
+            "Votre commande a été annulée. Le remboursement de {$payment->amount} FCFA est en cours de traitement.",
+            ['route' => 'customer_order_track', 'reference_id' => $order->id]
         );
     }
 
@@ -217,7 +229,8 @@ class VendorOrderController extends Controller
         Notifier::sendMany(
             $driverUserIds,
             'delivery',
-            'Nouvelle livraison disponible.'
+            'Nouvelle livraison disponible.',
+            ['route' => 'driver_available']
         );
     }
 

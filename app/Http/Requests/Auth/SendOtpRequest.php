@@ -19,6 +19,9 @@ class SendOtpRequest extends FormRequest
     {
         return [
             'phone' => ['required', 'string', 'max:30'],
+            // AfrikSMS ne couvre que le Togo : un numéro étranger reçoit son
+            // code par email, d'où l'adresse exigée dans ce cas (voir OtpService).
+            'email' => [$this->isForeignPhone() ? 'required' : 'nullable', 'email', 'max:255'],
         ];
     }
 
@@ -28,5 +31,12 @@ class SendOtpRequest extends FormRequest
     public function internationalPhone(): string
     {
         return PhoneNumber::e164($this->validated()['phone']);
+    }
+
+    private function isForeignPhone(): bool
+    {
+        $phone = PhoneNumber::e164((string) $this->input('phone'));
+
+        return $phone !== '' && ! PhoneNumber::isTogo($phone);
     }
 }

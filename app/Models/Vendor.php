@@ -21,12 +21,27 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'is_active',
     'id_number',
     'id_document_url',
+    'id_document_type',
     'rccm_number',
     'rccm_document_url',
+    'verification_status',
+    'verification_notes',
+    'verified_at',
 ])]
 class Vendor extends Model
 {
     use HasFactory, HasUuids, HasWallet;
+
+    /**
+     * Mirrors the DB default so a create() that omits it still returns
+     * 'pending' immediately (Eloquent never re-reads DB column defaults
+     * after an insert without an explicit refresh()).
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'verification_status' => 'pending',
+    ];
 
     /**
      * @return array<string, string>
@@ -37,6 +52,7 @@ class Vendor extends Model
             'latitude' => 'decimal:7',
             'longitude' => 'decimal:7',
             'is_active' => 'boolean',
+            'verified_at' => 'datetime',
         ];
     }
 

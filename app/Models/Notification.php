@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'user_id',
     'type',
     'message',
+    'route',
+    'reference_id',
     'is_read',
 ])]
 class Notification extends Model

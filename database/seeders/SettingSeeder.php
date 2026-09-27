@@ -84,6 +84,55 @@ class SettingSeeder extends Seeder
                 'group' => 'emploi',
                 'description' => 'Nombre d\'offres qu\'un recruteur non abonné peut publier gratuitement.',
             ],
+            [
+                'key' => 'min_app_version_ios',
+                'value' => '1.0.0',
+                'type' => 'string',
+                'group' => 'app',
+                'description' => "Version iOS minimale acceptée (semver). En dessous, l'app affiche un écran de mise à jour forcée.",
+            ],
+            [
+                'key' => 'min_app_version_android',
+                'value' => '1.0.0',
+                'type' => 'string',
+                'group' => 'app',
+                'description' => "Version Android minimale acceptée (semver). En dessous, l'app affiche un écran de mise à jour forcée.",
+            ],
+            [
+                'key' => 'latest_app_version_ios',
+                'value' => '1.0.0',
+                'type' => 'string',
+                'group' => 'app',
+                'description' => 'Dernière version iOS publiée (semver) — sert à une simple invitation à mettre à jour, non bloquante.',
+            ],
+            [
+                'key' => 'latest_app_version_android',
+                'value' => '1.0.0',
+                'type' => 'string',
+                'group' => 'app',
+                'description' => 'Dernière version Android publiée (semver) — sert à une simple invitation à mettre à jour, non bloquante.',
+            ],
+            [
+                'key' => 'app_store_url_ios',
+                'value' => '',
+                'type' => 'string',
+                'group' => 'app',
+                'description' => "Lien App Store affiché sur l'écran de mise à jour (bouton).",
+            ],
+            [
+                'key' => 'app_store_url_android',
+                'value' => 'https://play.google.com/store/apps/details?id=com.duokhorus.telu',
+                'type' => 'string',
+                'group' => 'app',
+                'description' => "Lien Play Store affiché sur l'écran de mise à jour (bouton).",
+            ],
+            [
+                'key' => 'app_update_message',
+                'value' => '',
+                'type' => 'string',
+                'group' => 'app',
+                'description' => "Message optionnel affiché sur l'écran de mise à jour forcée (vide = message par défaut côté app).",
+            ],
         ];
 
         foreach ($defaults as $setting) {

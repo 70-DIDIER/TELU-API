@@ -80,7 +80,8 @@ class RecruiterApplicationController extends Controller
         Notifier::send(
             $found->jobSeeker->user_id,
             'job',
-            "Votre candidature est maintenant : {$target}."
+            "Votre candidature est maintenant : {$target}.",
+            ['route' => 'seeker_applications']
         );
 
         return response()->json($found->fresh()->load('jobSeeker:id,profession,skills'));

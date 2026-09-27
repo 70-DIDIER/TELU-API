@@ -54,6 +54,18 @@ class PropertyTest extends TestCase
             ->assertJsonPath('data.0.property_type', 'house');
     }
 
+    public function test_property_type_accepts_a_comma_separated_list(): void
+    {
+        Sanctum::actingAs(User::factory()->type('client')->create());
+        Property::factory()->create(['is_available' => true, 'property_type' => 'studio']);
+        Property::factory()->create(['is_available' => true, 'property_type' => 'house']);
+        Property::factory()->create(['is_available' => true, 'property_type' => 'hotel_room']);
+
+        $this->getJson('/api/properties?property_type=studio,house')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+    }
+
     public function test_an_owner_can_publish_a_property(): void
     {
         $user = User::factory()->type('property_owner')->create();

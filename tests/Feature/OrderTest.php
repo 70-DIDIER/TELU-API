@@ -71,10 +71,12 @@ class OrderTest extends TestCase
             'quantity' => 2,
         ]);
 
-        // The vendor is notified of the new order.
+        // The vendor is notified of the new order, deep-linking to their order screen.
         $this->assertDatabaseHas('notifications', [
             'user_id' => $this->vendor->user_id,
             'type' => 'order',
+            'route' => 'vendor_order',
+            'reference_id' => $order->id,
         ]);
     }
 

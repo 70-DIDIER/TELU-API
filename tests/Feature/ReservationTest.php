@@ -57,6 +57,7 @@ class ReservationTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'user_id' => $property->owner->user_id,
             'type' => 'reservation',
+            'route' => 'owner_reservations',
         ]);
     }
 

@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Recruiter;
+use App\Services\Notifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class AdminRecruiterController extends Controller
 {
@@ -39,6 +41,41 @@ class AdminRecruiterController extends Controller
         if (! $found) {
             return response()->json(['message' => 'Recruteur introuvable.'], 404);
         }
+
+        return response()->json($found);
+    }
+
+    /**
+     * Approve or reject the recruiter's KYC documents (id_document_url + company_document_url).
+     * A rejection requires a reason so the recruiter knows what to fix and resubmit.
+     */
+    public function updateVerification(Request $request, string $recruiter): JsonResponse
+    {
+        $data = $request->validate([
+            'verification_status' => ['required', Rule::in(['verified', 'rejected'])],
+            'verification_notes' => ['nullable', 'string', 'max:1000', 'required_if:verification_status,rejected'],
+        ]);
+
+        $found = Recruiter::find($recruiter);
+
+        if (! $found) {
+            return response()->json(['message' => 'Recruteur introuvable.'], 404);
+        }
+
+        $found->update([
+            'verification_status' => $data['verification_status'],
+            'verification_notes' => $data['verification_notes'] ?? null,
+            'verified_at' => now(),
+        ]);
+
+        Notifier::send(
+            $found->user_id,
+            'verification',
+            $data['verification_status'] === 'verified'
+                ? 'Vos documents ont été vérifiés : votre profil recruteur est certifié.'
+                : "Vos documents ont été rejetés : {$data['verification_notes']}",
+            ['route' => $data['verification_status'] === 'verified' ? 'recruiter_space' : 'recruiter_complete_profile']
+        );
 
         return response()->json($found);
     }

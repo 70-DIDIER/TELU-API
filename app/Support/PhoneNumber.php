@@ -31,6 +31,17 @@ class PhoneNumber
     }
 
     /**
+     * true si `$e164` (forme E.164 sans "+", voir e164()) est un numéro togolais.
+     * AfrikSMS ne couvre que le Togo : sert à décider SMS vs email pour l'OTP
+     * (voir OtpService) et à savoir si les repêchages de formats historiques
+     * (local à 8 chiffres, "+" superflu) sont pertinents.
+     */
+    public static function isTogo(string $e164): bool
+    {
+        return str_starts_with($e164, self::DEFAULT_COUNTRY_CODE);
+    }
+
+    /**
      * Forme locale à 8 chiffres (90112233), ou la saisie nettoyée si le numéro
      * n'est pas un numéro togolais reconnaissable.
      */
@@ -88,6 +99,17 @@ class PhoneNumber
         if (str_starts_with($digits, self::DEFAULT_COUNTRY_CODE)
             && strlen($digits) === strlen(self::DEFAULT_COUNTRY_CODE) + 8) {
             return $digits;
+        }
+
+        // Idempotence : cette fonction ne renvoie jamais de "+", donc rappeler
+        // e164() sur sa propre sortie (ex. OtpService::issue() qui reçoit déjà
+        // un numéro normalisé) doit redonner le même résultat. Sans ce détour,
+        // un numéro étranger déjà normalisé (ex. "33612345678") serait
+        // réinterprété avec l'indicatif par défaut (Togo) et rejeté comme
+        // invalide au lieu d'être relu comme "+33612345678".
+        $asAlreadyInternational = self::parse('+'.$digits, null);
+        if ($asAlreadyInternational !== '') {
+            return $asAlreadyInternational;
         }
 
         return self::parse($digits, $defaultRegion);

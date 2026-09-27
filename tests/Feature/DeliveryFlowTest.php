@@ -44,6 +44,36 @@ class DeliveryFlowTest extends TestCase
             ->assertJsonPath('data.0.id', $open->id);
     }
 
+    public function test_the_pool_is_sorted_by_distance_to_the_driver_when_known(): void
+    {
+        $this->driver->update(['current_latitude' => 6.13, 'current_longitude' => 1.22]);
+
+        $nearVendor = Vendor::factory()->create(['latitude' => 6.131, 'longitude' => 1.221]);
+        $farVendor = Vendor::factory()->create(['latitude' => 9.55, 'longitude' => 1.19]); // ~Kara, far from Lomé
+
+        $near = Delivery::factory()->create(['order_id' => Order::factory()->create(['vendor_id' => $nearVendor->id])->id]);
+        $far = Delivery::factory()->create(['order_id' => Order::factory()->create(['vendor_id' => $farVendor->id])->id]);
+
+        $data = $this->getJson('/api/driver/deliveries/available')->assertOk()->json('data');
+
+        $this->assertSame($near->id, $data[0]['id']);
+        $this->assertSame($far->id, $data[1]['id']);
+        $this->assertLessThan($data[1]['distance_km'], $data[0]['distance_km']);
+    }
+
+    public function test_the_pool_falls_back_to_newest_first_without_a_known_driver_position(): void
+    {
+        $this->driver->update(['current_latitude' => null, 'current_longitude' => null]);
+        $older = Delivery::factory()->create(['created_at' => now()->subHour()]);
+        $newer = Delivery::factory()->create(['created_at' => now()]);
+
+        $this->getJson('/api/driver/deliveries/available')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $newer->id)
+            ->assertJsonPath('data.1.id', $older->id)
+            ->assertJsonPath('data.0.distance_km', null);
+    }
+
     public function test_a_user_without_a_driver_profile_is_rejected(): void
     {
         Sanctum::actingAs(User::factory()->type('client')->create());

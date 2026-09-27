@@ -50,7 +50,8 @@ class CommerceLedger
                 Notifier::send(
                     $order->vendor->user_id,
                     'wallet',
-                    "Votre portefeuille a été crédité de {$order->vendor_net_amount} FCFA pour la commande #{$order->id}."
+                    "Votre portefeuille a été crédité de {$order->vendor_net_amount} FCFA pour la commande #{$order->id}.",
+                    ['route' => 'vendor_wallet']
                 );
             }
 
@@ -66,7 +67,8 @@ class CommerceLedger
                 Notifier::send(
                     $delivery->driver->user_id,
                     'wallet',
-                    "Votre portefeuille a été crédité de {$delivery->driver_net_amount} FCFA pour la livraison #{$delivery->id}."
+                    "Votre portefeuille a été crédité de {$delivery->driver_net_amount} FCFA pour la livraison #{$delivery->id}.",
+                    ['route' => 'driver_wallet']
                 );
             }
 

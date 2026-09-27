@@ -62,4 +62,17 @@ class Order extends Model
     {
         return $this->hasOne(Delivery::class);
     }
+
+    /**
+     * The most recent payment attempt for this order (payments.reference_type
+     * is a plain string column, not a real Eloquent morph — see Payment
+     * model). Lets callers show payment status alongside the order without
+     * a second /api/payments lookup keyed by reference_id.
+     */
+    public function payment(): HasOne
+    {
+        return $this->hasOne(Payment::class, 'reference_id')
+            ->where('reference_type', 'order')
+            ->latestOfMany();
+    }
 }

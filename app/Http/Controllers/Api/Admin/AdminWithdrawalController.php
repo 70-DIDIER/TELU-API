@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Driver;
 use App\Models\WithdrawalRequest;
 use App\Services\Notifier;
 use Illuminate\Http\JsonResponse;
@@ -16,7 +17,7 @@ class AdminWithdrawalController extends Controller
     public function index(Request $request): JsonResponse
     {
         $withdrawals = WithdrawalRequest::query()
-            ->with('wallet.walletable')
+            ->with('wallet.walletable.user:id,full_name,phone,email')
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->latest()
             ->paginate(20);
@@ -90,7 +91,9 @@ class AdminWithdrawalController extends Controller
         $walletable = $withdrawal->wallet?->walletable;
 
         if ($walletable) {
-            Notifier::send($walletable->user_id, $type, $message);
+            Notifier::send($walletable->user_id, $type, $message, [
+                'route' => $walletable instanceof Driver ? 'driver_wallet' : 'vendor_wallet',
+            ]);
         }
     }
 }

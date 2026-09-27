@@ -24,9 +24,15 @@ class AdminSettingTest extends TestCase
         Setting::set('commission_rate_order', '0.10', 'decimal', 'commerce');
         Setting::set('property_free_quota', '3', 'integer', 'immobilier');
 
-        $this->getJson('/api/admin/settings')
+        // Non filtré : n'affirme pas un total exact, car des migrations de
+        // données (ex. les settings de version d'app) peuvent en ajouter
+        // d'autres au fil du temps — seul le filtre par groupe l'est.
+        $this->getJson('/api/admin/settings')->assertOk();
+
+        $this->getJson('/api/admin/settings?group=commerce')
             ->assertOk()
-            ->assertJsonCount(2);
+            ->assertJsonCount(1)
+            ->assertJsonPath('0.key', 'commission_rate_order');
     }
 
     public function test_an_admin_can_update_a_setting_value(): void

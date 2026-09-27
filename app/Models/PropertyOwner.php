@@ -20,11 +20,25 @@ use Illuminate\Database\Eloquent\Relations\HasManyThrough;
     'subscription_expires_at',
     'id_number',
     'id_document_url',
-    'ownership_proof_url',
+    'id_document_type',
+    'verification_status',
+    'verification_notes',
+    'verified_at',
 ])]
 class PropertyOwner extends Model
 {
     use HasFactory, HasSubscription, HasUuids;
+
+    /**
+     * Mirrors the DB default so a create() that omits it still returns
+     * 'pending' immediately (Eloquent never re-reads DB column defaults
+     * after an insert without an explicit refresh()).
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'verification_status' => 'pending',
+    ];
 
     /**
      * @return array<string, string>
@@ -34,6 +48,7 @@ class PropertyOwner extends Model
         return [
             'subscription_started_at' => 'datetime',
             'subscription_expires_at' => 'datetime',
+            'verified_at' => 'datetime',
         ];
     }
 

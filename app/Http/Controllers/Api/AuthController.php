@@ -45,14 +45,12 @@ class AuthController extends Controller
 
         $phoneVerified = $this->otp->redeemRegistrationToken($phone, $otpToken);
 
-        // AfrikSMS ne couvre que le Togo : l'OTP n'est jamais exigé pour un
-        // numéro étranger, quel que soit OTP_REQUIRED_FOR_REGISTRATION (voir
-        // aussi RegisterRequest::rules(), qui applique la même règle).
-        $isTogoNumber = str_starts_with($phone, PhoneNumber::DEFAULT_COUNTRY_CODE);
-
-        if (! $phoneVerified && $isTogoNumber && config('otp.required_for_registration')) {
+        // Numéro étranger désormais vérifiable (code par email — voir
+        // OtpService::issue()) : la règle s'applique donc à tout numéro, comme
+        // RegisterRequest::rules(), qui exige déjà le jeton dans ce cas.
+        if (! $phoneVerified && config('otp.required_for_registration')) {
             throw ValidationException::withMessages([
-                'otp_token' => ['Code de vérification invalide ou expiré. Redemandez un code par SMS.'],
+                'otp_token' => ['Code de vérification invalide ou expiré. Redemandez un code.'],
             ]);
         }
 

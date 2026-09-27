@@ -19,11 +19,26 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'current_latitude',
     'current_longitude',
     'id_document_url',
+    'id_document_type',
     'vehicle_photo_url',
+    'verification_status',
+    'verification_notes',
+    'verified_at',
 ])]
 class Driver extends Model
 {
     use HasFactory, HasUuids, HasWallet;
+
+    /**
+     * Mirrors the DB default so a create() that omits it still returns
+     * 'pending' immediately (Eloquent never re-reads DB column defaults
+     * after an insert without an explicit refresh()).
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'verification_status' => 'pending',
+    ];
 
     /**
      * @return array<string, string>
@@ -34,6 +49,7 @@ class Driver extends Model
             'is_available' => 'boolean',
             'current_latitude' => 'decimal:7',
             'current_longitude' => 'decimal:7',
+            'verified_at' => 'datetime',
         ];
     }
 

@@ -96,12 +96,18 @@ class MessageController extends Controller
         ]);
 
         // Notify the receiver of the new message (push payload carries enough
-        // to deep-link straight into the thread with the sender).
+        // to deep-link straight into the thread with the sender; route/
+        // reference_id do the same for the in-app notifications list).
         Notifier::send(
             $message->receiver_id,
             'message',
             $request->user()->full_name.' vous a envoyé un message.',
-            ['sender_id' => $request->user()->id, 'sender_name' => $request->user()->full_name]
+            [
+                'sender_id' => $request->user()->id,
+                'sender_name' => $request->user()->full_name,
+                'route' => 'chat',
+                'reference_id' => $request->user()->id,
+            ]
         );
 
         return response()->json($message, 201);

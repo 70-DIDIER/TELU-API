@@ -74,7 +74,8 @@ class OwnerReservationController extends Controller
         Notifier::send(
             $found->customer_id,
             'reservation',
-            "Votre réservation est maintenant : {$target}."
+            "Votre réservation est maintenant : {$target}.",
+            ['route' => 'customer_reservations']
         );
 
         return response()->json($found->fresh()->load('property:id,title,property_type'));
