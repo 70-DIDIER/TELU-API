@@ -2,8 +2,57 @@
 
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
+@source '../views/**/*.blade.php';
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+    --font-sans: 'Urbanist', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
         'Segoe UI Symbol', 'Noto Color Emoji';
+
+    --color-primary-50: #eaf1fe;
+    --color-primary-100: #dbe8fd;
+    --color-primary-200: #bcd4fa;
+    --color-primary-300: #8ab7f7;
+    --color-primary-400: #5a92f3;
+    --color-primary-500: #3b6eef;
+    --color-primary-600: #316ef3;
+    --color-primary-700: #2859c9;
+    --color-primary-800: #2349a1;
+    --color-primary-900: #203e82;
+
+    --color-green-50: #e4f7ef;
+    --color-green-100: #c9eedf;
+    --color-green-200: #99dcbf;
+    --color-green-300: #5cc394;
+    --color-green-400: #2ea86e;
+    --color-green-500: #1fb57a;
+    --color-green-600: #199163;
+    --color-green-700: #167350;
+    --color-green-800: #165e43;
+    --color-green-900: #134e39;
+
+    --color-amber-50: #fdf1de;
+    --color-amber-100: #fae3bd;
+    --color-amber-200: #f5c780;
+    --color-amber-300: #efa144;
+    --color-amber-400: #e88318;
+    --color-amber-500: #dd6b0c;
+    --color-amber-600: #c2550c;
+    --color-amber-700: #9d4310;
+    --color-amber-800: #7e3714;
+    --color-amber-900: #663014;
+
+    --shadow-2xl: 0 25px 50px -12px rgba(8, 17, 41, 0.15);
+    --shadow-xl: 0 20px 25px -5px rgba(8, 17, 41, 0.1), 0 10px 10px -5px rgba(8, 17, 41, 0.04);
+
+    --animate-float-slow: float-slow 6s ease-in-out infinite;
+    --animate-float-slow-delay: float-slow 6s ease-in-out infinite 1s;
+
+    @keyframes float-slow {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-12px); }
+    }
+}
+
+@utility animation-delay-1000 {
+    animation-delay: 1s;
 }
